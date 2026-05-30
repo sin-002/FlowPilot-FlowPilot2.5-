@@ -235,7 +235,7 @@ return {
   assert.deepEqual(api.getReadAndDeleteCalls(), ['baseline', 'new']);
 });
 
-test('handlePollEmail keeps ignoring targetEmail when receive-mode matching is disabled', async () => {
+test('handlePollEmail skips target matching when targetEmail is empty', async () => {
   const bundle = [
     extractFunction('normalizeMinuteTimestamp'),
     extractFunction('handlePollEmail'),
@@ -316,12 +316,116 @@ return {
     subjectFilters: ['verification'],
     maxAttempts: 4,
     intervalMs: 1,
-    targetEmail: 'expected@example.com',
+    targetEmail: '',
     mail2925MatchTargetEmail: false,
   });
 
   assert.equal(result.code, '112233');
   assert.deepEqual(api.getReadAndDeleteCalls(), ['mail-1']);
+});
+
+test('handlePollEmail still matches detail recipient when targetEmail exists and payload flag is false', async () => {
+  const bundle = [
+    extractFunction('extractEmails'),
+    extractFunction('normalizeTargetEmailHints'),
+    extractFunction('extractForwardedTargetEmails'),
+    extractFunction('emailMatchesTarget'),
+    extractFunction('getTargetEmailMatchState'),
+    extractFunction('normalizeNodeText'),
+    extractFunction('extractMail2925DetailRecipientEmails'),
+    extractFunction('getMail2925RecipientEmailMatchState'),
+    extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('normalizeRulePatternList'),
+    extractFunction('extractCodeByRulePatterns'),
+    extractFunction('extractLegacyStrictVerificationCode'),
+    extractFunction('isLikelyCompactTimeValue'),
+    extractFunction('isLikelyHeaderTimestampCode'),
+    extractFunction('isLikelyMailRoutingCode'),
+    extractFunction('isSafeSixDigitCodeCandidate'),
+    extractFunction('findSafeStandaloneSixDigitCode'),
+    extractFunction('extractVerificationCode'),
+    extractFunction('handlePollEmail'),
+  ].join('\n');
+
+  const api = new Function(`
+let state = 'ready';
+const seenCodes = new Set();
+const readAndDeleteCalls = [];
+const mismatchMail = {
+  id: 'mail-1',
+  text: 'ChatGPT verification code 202167 for wrong@example.com',
+  detail: '发件人：noreply <noreply@tm.openai.com> 收件人： wrong <wrong@example.com> 时间：2026-05-28 输入此临时验证码以继续：202167',
+};
+const targetMail = {
+  id: 'mail-2',
+  text: 'ChatGPT verification code 339467 for expected@example.com',
+  detail: '发件人：noreply <noreply@tm.openai.com> 收件人： expected <expected@example.com> 时间：2026-05-28 输入此临时验证码以继续：339467',
+};
+
+function findMailItems() {
+  return state === 'ready' ? [mismatchMail, targetMail] : [];
+}
+
+function getMailItemId(item) {
+  return item.id;
+}
+
+function getCurrentMailIds(items = []) {
+  return new Set(items.map((item) => item.id));
+}
+
+function parseMailItemTimestamp() {
+  return Date.now();
+}
+
+function matchesMailFilters() {
+  return true;
+}
+
+function getMailItemText(item) {
+  return item.text;
+}
+
+async function sleep() {}
+async function sleepRandom() {}
+async function waitForMailboxReady() {
+  return { ready: true, items: findMailItems(), empty: false };
+}
+async function returnToInbox() {
+  return true;
+}
+async function refreshInbox() {}
+
+async function openMailAndDeleteAfterRead(item) {
+  readAndDeleteCalls.push(item.id);
+  return item.detail;
+}
+
+async function ensureSeenCodesSession() {}
+function persistSeenCodes() {}
+function log() {}
+
+${bundle}
+
+return {
+  handlePollEmail,
+  getReadAndDeleteCalls() {
+    return readAndDeleteCalls.slice();
+  },
+};
+`)();
+
+  const result = await api.handlePollEmail(8, {
+    senderFilters: ['chatgpt'],
+    subjectFilters: ['verification'],
+    maxAttempts: 1,
+    intervalMs: 1,
+    targetEmail: 'expected@example.com',
+    mail2925MatchTargetEmail: false,
+  });
+
+  assert.equal(result.code, '339467');
+  assert.deepEqual(api.getReadAndDeleteCalls(), ['mail-2']);
 });
 
 test('handlePollEmail skips explicit mismatched target emails when receive-mode matching is enabled', async () => {
@@ -331,6 +435,9 @@ test('handlePollEmail skips explicit mismatched target emails when receive-mode 
     extractFunction('extractForwardedTargetEmails'),
     extractFunction('emailMatchesTarget'),
     extractFunction('getTargetEmailMatchState'),
+    extractFunction('normalizeNodeText'),
+    extractFunction('extractMail2925DetailRecipientEmails'),
+    extractFunction('getMail2925RecipientEmailMatchState'),
     extractFunction('normalizeMinuteTimestamp'),
     extractFunction('handlePollEmail'),
   ].join('\n');
@@ -342,10 +449,12 @@ const readAndDeleteCalls = [];
 const mismatchMail = {
   id: 'mail-1',
   text: 'ChatGPT verification code 112233 for another.user@example.com',
+  detail: '发件人：noreply <noreply@tm.openai.com> 收件人： another <another.user@example.com> 时间：2026-05-28 输入此临时验证码以继续：112233',
 };
 const targetMail = {
   id: 'mail-2',
   text: 'ChatGPT verification code 445566 for expected@example.com',
+  detail: '发件人：noreply <noreply@tm.openai.com> 收件人： expected <expected@example.com> 时间：2026-05-28 输入此临时验证码以继续：445566',
 };
 
 function findMailItems() {
@@ -390,7 +499,7 @@ async function refreshInbox() {}
 
 async function openMailAndDeleteAfterRead(item) {
   readAndDeleteCalls.push(item.id);
-  return item.text;
+  return item.detail;
 }
 
 async function ensureSeenCodesSession() {}
@@ -418,6 +527,202 @@ return {
 
   assert.equal(result.code, '445566');
   assert.deepEqual(api.getReadAndDeleteCalls(), ['mail-2']);
+});
+
+test('handlePollEmail rejects preview codes when 2925 detail recipient is missing', async () => {
+  const bundle = [
+    extractFunction('extractEmails'),
+    extractFunction('normalizeTargetEmailHints'),
+    extractFunction('extractForwardedTargetEmails'),
+    extractFunction('emailMatchesTarget'),
+    extractFunction('getTargetEmailMatchState'),
+    extractFunction('normalizeNodeText'),
+    extractFunction('extractMail2925DetailRecipientEmails'),
+    extractFunction('getMail2925RecipientEmailMatchState'),
+    extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('handlePollEmail'),
+  ].join('\n');
+
+  const api = new Function(`
+let state = 'ready';
+const seenCodes = new Set();
+const logs = [];
+const mail = {
+  id: 'mail-1',
+  text: 'ChatGPT bounces+20216706-9f52-target=2925.com verification',
+  detail: '发件人：noreply <noreply@tm.openai.com> 时间：2026-05-28 输入此临时验证码以继续：339467',
+};
+
+function findMailItems() {
+  return state === 'ready' ? [mail] : [];
+}
+
+function getMailItemId(item) {
+  return item.id;
+}
+
+function getCurrentMailIds(items = []) {
+  return new Set(items.map((item) => item.id));
+}
+
+function parseMailItemTimestamp() {
+  return Date.now();
+}
+
+function matchesMailFilters() {
+  return true;
+}
+
+function getMailItemText(item) {
+  return item.text;
+}
+
+function extractVerificationCode(text) {
+  const match = String(text || '').match(/(\\d{6})/);
+  return match ? match[1] : null;
+}
+
+async function sleep() {}
+async function sleepRandom() {}
+async function waitForMailboxReady() {
+  return { ready: true, items: findMailItems(), empty: false };
+}
+async function returnToInbox() {
+  return true;
+}
+async function refreshInbox() {}
+
+async function openMailAndDeleteAfterRead(item) {
+  return item.detail;
+}
+
+async function ensureSeenCodesSession() {}
+function persistSeenCodes() {}
+function log(message) {
+  logs.push(message);
+}
+
+${bundle}
+
+return {
+  handlePollEmail,
+  getLogs() {
+    return logs.slice();
+  },
+};
+`)();
+
+  await assert.rejects(
+    () => api.handlePollEmail(8, {
+      senderFilters: ['chatgpt'],
+      subjectFilters: ['verification'],
+      maxAttempts: 1,
+      intervalMs: 1,
+      targetEmail: 'expected@example.com',
+      mail2925MatchTargetEmail: true,
+    }),
+    /仍未在 2925 邮箱中找到新的匹配邮件/
+  );
+
+  assert.match(api.getLogs().join('\n'), /详情页未识别到收件人/);
+});
+
+test('handlePollEmail ignores preview code when target matched but detail code is missing', async () => {
+  const bundle = [
+    extractFunction('extractEmails'),
+    extractFunction('normalizeTargetEmailHints'),
+    extractFunction('extractForwardedTargetEmails'),
+    extractFunction('emailMatchesTarget'),
+    extractFunction('getTargetEmailMatchState'),
+    extractFunction('normalizeNodeText'),
+    extractFunction('extractMail2925DetailRecipientEmails'),
+    extractFunction('getMail2925RecipientEmailMatchState'),
+    extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('handlePollEmail'),
+  ].join('\n');
+
+  const api = new Function(`
+let state = 'ready';
+const seenCodes = new Set();
+const logs = [];
+const mail = {
+  id: 'mail-1',
+  text: 'ChatGPT bounces+20216706-9f52-target=2925.com verification',
+  detail: '发件人：noreply <noreply@tm.openai.com> 收件人： expected <expected@example.com> 时间：2026-05-28 OpenAI verification message without body code',
+};
+
+function findMailItems() {
+  return state === 'ready' ? [mail] : [];
+}
+
+function getMailItemId(item) {
+  return item.id;
+}
+
+function getCurrentMailIds(items = []) {
+  return new Set(items.map((item) => item.id));
+}
+
+function parseMailItemTimestamp() {
+  return Date.now();
+}
+
+function matchesMailFilters() {
+  return true;
+}
+
+function getMailItemText(item) {
+  return item.text;
+}
+
+function extractVerificationCode(text) {
+  const match = String(text || '').match(/(\\d{6})/);
+  return match ? match[1] : null;
+}
+
+async function sleep() {}
+async function sleepRandom() {}
+async function waitForMailboxReady() {
+  return { ready: true, items: findMailItems(), empty: false };
+}
+async function returnToInbox() {
+  return true;
+}
+async function refreshInbox() {}
+
+async function openMailAndDeleteAfterRead(item) {
+  return item.detail;
+}
+
+async function ensureSeenCodesSession() {}
+function persistSeenCodes() {}
+function log(message) {
+  logs.push(message);
+}
+
+${bundle}
+
+return {
+  handlePollEmail,
+  getLogs() {
+    return logs.slice();
+  },
+};
+`)();
+
+  await assert.rejects(
+    () => api.handlePollEmail(8, {
+      senderFilters: ['chatgpt'],
+      subjectFilters: ['verification'],
+      maxAttempts: 1,
+      intervalMs: 1,
+      targetEmail: 'expected@example.com',
+      mail2925MatchTargetEmail: true,
+    }),
+    /仍未在 2925 邮箱中找到新的匹配邮件/
+  );
+
+  assert.match(api.getLogs().join('\n'), /已忽略预览验证码 202167/);
 });
 
 test('getTargetEmailMatchState decodes generic forwarded bounce aliases without OpenAI-specific domains', () => {
@@ -599,6 +904,8 @@ test('extractVerificationCode strict mode matches the new suspicious log-in mail
     extractFunction('extractLegacyStrictVerificationCode'),
     extractFunction('isLikelyCompactTimeValue'),
     extractFunction('isLikelyHeaderTimestampCode'),
+    extractFunction('isLikelyMailRoutingCode'),
+    extractFunction('isSafeSixDigitCodeCandidate'),
     extractFunction('findSafeStandaloneSixDigitCode'),
     extractFunction('extractVerificationCode'),
   ].join('\n');
@@ -620,6 +927,8 @@ test('extractVerificationCode supports runtime mail rule patterns', () => {
     extractFunction('extractLegacyStrictVerificationCode'),
     extractFunction('isLikelyCompactTimeValue'),
     extractFunction('isLikelyHeaderTimestampCode'),
+    extractFunction('isLikelyMailRoutingCode'),
+    extractFunction('isSafeSixDigitCodeCandidate'),
     extractFunction('findSafeStandaloneSixDigitCode'),
     extractFunction('extractVerificationCode'),
   ].join('\n');
@@ -645,6 +954,8 @@ test('extractVerificationCode ignores compact header time before fallback code',
     extractFunction('extractLegacyStrictVerificationCode'),
     extractFunction('isLikelyCompactTimeValue'),
     extractFunction('isLikelyHeaderTimestampCode'),
+    extractFunction('isLikelyMailRoutingCode'),
+    extractFunction('isSafeSixDigitCodeCandidate'),
     extractFunction('findSafeStandaloneSixDigitCode'),
     extractFunction('extractVerificationCode'),
   ].join('\n');
@@ -664,6 +975,113 @@ return { extractVerificationCode };
   ].join('\n');
 
   assert.equal(api.extractVerificationCode(bodyText, false), '371138');
+});
+
+test('extractVerificationCode prefers OpenAI Chinese body code over bounce route digits', () => {
+  const bundle = [
+    extractFunction('normalizeRulePatternList'),
+    extractFunction('extractCodeByRulePatterns'),
+    extractFunction('extractLegacyStrictVerificationCode'),
+    extractFunction('isLikelyCompactTimeValue'),
+    extractFunction('isLikelyHeaderTimestampCode'),
+    extractFunction('isLikelyMailRoutingCode'),
+    extractFunction('isSafeSixDigitCodeCandidate'),
+    extractFunction('findSafeStandaloneSixDigitCode'),
+    extractFunction('extractVerificationCode'),
+  ].join('\n');
+
+  const api = new Function(`
+${bundle}
+return { extractVerificationCode };
+`)();
+
+  const detailText = [
+    '发件人： noreply <noreply@tm.openai.com>（由 bounces+20216706-c3d6-target=2925.com@em7877.tm.openai.com 代发）',
+    '收件人： expected <expected@example.com>',
+    '时 间：2026-5-29 09:24:00',
+    '输入此临时验证码以继续： 339467',
+  ].join(' ');
+
+  assert.equal(
+    api.extractVerificationCode(detailText, {
+      codePatterns: [
+        {
+          source: '(?:verification\\s+code|temporary\\s+verification\\s+code|your\\s+chatgpt\\s+code|code(?:\\s+is)?)[^0-9]{0,16}(\\d{6})',
+          flags: 'i',
+        },
+      ],
+    }),
+    '339467'
+  );
+});
+
+test('extractVerificationCode does not slice route ids into six digit codes', () => {
+  const bundle = [
+    extractFunction('normalizeRulePatternList'),
+    extractFunction('extractCodeByRulePatterns'),
+    extractFunction('extractLegacyStrictVerificationCode'),
+    extractFunction('isLikelyCompactTimeValue'),
+    extractFunction('isLikelyHeaderTimestampCode'),
+    extractFunction('isLikelyMailRoutingCode'),
+    extractFunction('isSafeSixDigitCodeCandidate'),
+    extractFunction('findSafeStandaloneSixDigitCode'),
+    extractFunction('extractVerificationCode'),
+  ].join('\n');
+
+  const api = new Function(`
+${bundle}
+return { extractVerificationCode };
+`)();
+
+  const routeOnlyText = [
+    'OpenAI',
+    '发件人： noreply <noreply@tm.openai.com>（由 bounces+20216706-9034-bind=2925.com@em7877.tm.openai.com 代发）',
+    '收件人： expected <expected@example.com>',
+    '时 间：2026-5-29 09:56:13',
+  ].join(' ');
+
+  assert.equal(
+    api.extractVerificationCode(routeOnlyText, {
+      codePatterns: [
+        {
+          source: 'OpenAI[\\s\\S]{0,80}?(\\d{6})',
+          flags: 'i',
+        },
+      ],
+    }),
+    null
+  );
+});
+
+test('getMail2925RecipientEmailMatchState only trusts detail recipient field', () => {
+  const bundle = [
+    extractFunction('normalizeNodeText'),
+    extractFunction('extractEmails'),
+    extractFunction('emailMatchesTarget'),
+    extractFunction('extractMail2925DetailRecipientEmails'),
+    extractFunction('getMail2925RecipientEmailMatchState'),
+  ].join('\n');
+
+  const api = new Function(`
+${bundle}
+return { getMail2925RecipientEmailMatchState };
+`)();
+
+  const openedText = [
+    '发件人： noreply <noreply@tm.openai.com>（由 bounces+20216706-c3d6-target=2925.com@em7877.tm.openai.com 代发）',
+    '收件人： wrong <wrong@2925.com>',
+    '时 间：2026-5-28 17:44:14',
+    '输入此临时验证码以继续： 339467',
+  ].join(' ');
+
+  assert.deepEqual(
+    api.getMail2925RecipientEmailMatchState(openedText, 'target@2925.com'),
+    {
+      matches: false,
+      hasExplicitEmail: true,
+      recipients: ['wrong@2925.com'],
+    }
+  );
 });
 
 test('openMailAndGetMessageText always returns to inbox after opening a 2925 message', async () => {

@@ -731,12 +731,22 @@ function extractCodeByRulePatterns(text, patterns = []) {
       }
       for (let index = 1; index < match.length; index += 1) {
         const candidate = String(match[index] || '').trim();
-        if (candidate) {
+        const candidateIndex = candidate
+          ? normalizedText.indexOf(candidate, Math.max(0, match.index || 0))
+          : -1;
+        if (
+          candidate
+          && isSafeSixDigitCodeCandidate(normalizedText, candidateIndex, candidate)
+        ) {
           return candidate;
         }
       }
-      if (String(match[0] || '').trim()) {
-        return String(match[0] || '').trim();
+      const fullMatch = String(match[0] || '').trim();
+      const fullMatchIndex = fullMatch
+        ? normalizedText.indexOf(fullMatch, Math.max(0, match.index || 0))
+        : -1;
+      if (fullMatch && isSafeSixDigitCodeCandidate(normalizedText, fullMatchIndex, fullMatch)) {
+        return fullMatch;
       }
     } catch (_) {
       // Ignore invalid runtime rule patterns and continue with other candidates.
@@ -818,14 +828,46 @@ function isLikelyHeaderTimestampCode(text, index, value) {
     && (timeLike || /^20\d{4}$/.test(candidate));
 }
 
+// 2925 详情页会把邮件头一起暴露出来，bounces 地址里的数字不是验证码。
+function isLikelyMailRoutingCode(text, index, value) {
+  const source = String(text || '');
+  const candidate = String(value || '');
+  if (!candidate) return false;
+
+  const before = source.slice(Math.max(0, index - 80), index);
+  const after = source.slice(index + candidate.length, index + candidate.length + 80);
+  const context = `${before}${candidate}${after}`.replace(/\s+/g, ' ');
+
+  return /(?:bounce|bounces|return-path|代发|发件人)/i.test(context)
+    && /(?:@|\.openai\.com|\.tm\.openai\.com|em\d+|=|[-+])/.test(context);
+}
+
+function isSafeSixDigitCodeCandidate(text, index, value) {
+  const normalized = String(text || '');
+  const candidate = String(value || '').trim();
+  const startIndex = Number(index);
+  if (!/^\d{6}$/.test(candidate) || !Number.isFinite(startIndex) || startIndex < 0) {
+    return false;
+  }
+
+  const beforeChar = normalized[startIndex - 1] || '';
+  const afterChar = normalized[startIndex + candidate.length] || '';
+  if (/\d/.test(beforeChar) || /\d/.test(afterChar)) {
+    return false;
+  }
+
+  return !isLikelyHeaderTimestampCode(normalized, startIndex, candidate)
+    && !isLikelyMailRoutingCode(normalized, startIndex, candidate);
+}
+
 function findSafeStandaloneSixDigitCode(text) {
   const normalized = String(text || '');
-  const pattern = /\b(\d{6})\b/g;
+  const pattern = /(?<!\d)(\d{6})(?!\d)/g;
   let match = null;
 
   while ((match = pattern.exec(normalized)) !== null) {
     const candidate = match[1];
-    if (!isLikelyHeaderTimestampCode(normalized, match.index, candidate)) {
+    if (isSafeSixDigitCodeCandidate(normalized, match.index, candidate)) {
       return candidate;
     }
   }
@@ -837,6 +879,10 @@ function extractVerificationCode(text, options = {}) {
   const legacyStrictMode = typeof options === 'boolean' ? options : false;
   const strictMode = legacyStrictMode || Boolean(options?.strictMode);
   const codePatterns = legacyStrictMode ? [] : options?.codePatterns;
+  const normalized = String(text || '');
+  const matchOpenAiCn = normalized.match(/输入此临时验证码以继续[\s\S]{0,80}?(?<!\d)(\d{6})(?!\d)/);
+  if (matchOpenAiCn) return matchOpenAiCn[1];
+
   const strictCode = extractLegacyStrictVerificationCode(text);
   const matchedByRule = extractCodeByRulePatterns(text, codePatterns);
   if (strictMode) {
@@ -845,15 +891,13 @@ function extractVerificationCode(text, options = {}) {
   if (matchedByRule) return matchedByRule;
   if (strictCode) return strictCode;
 
-  const normalized = String(text || '');
-
-  const matchCn = normalized.match(/(?:代码为|验证码[^0-9]*?)[\s：:]*(\d{6})/);
+  const matchCn = normalized.match(/(?:代码为|验证码[^0-9]*?)[\s：:]*(?<!\d)(\d{6})(?!\d)/);
   if (matchCn) return matchCn[1];
 
-  const matchLoginCode = normalized.match(/(?:log-?in\s+code|enter\s+this\s+code)[^0-9]{0,24}(\d{6})/i);
+  const matchLoginCode = normalized.match(/(?:log-?in\s+code|enter\s+this\s+code)[^0-9]{0,24}(?<!\d)(\d{6})(?!\d)/i);
   if (matchLoginCode) return matchLoginCode[1];
 
-  const matchEn = normalized.match(/code[:\s]+is[:\s]+(\d{6})|code[:\s]+(\d{6})/i);
+  const matchEn = normalized.match(/code[:\s]+is[:\s]+(?<!\d)(\d{6})(?!\d)|code[:\s]+(?<!\d)(\d{6})(?!\d)/i);
   if (matchEn) return matchEn[1] || matchEn[2];
 
   return findSafeStandaloneSixDigitCode(normalized);
@@ -939,6 +983,44 @@ function getTargetEmailMatchState(text, targetEmail, options = {}) {
   return {
     matches: comparableEmails.some((candidate) => emailMatchesTarget(candidate, normalizedTarget)),
     hasExplicitEmail: true,
+  };
+}
+
+// 只从 2925 详情页“收件人”字段提取邮箱，避免发件人/bounces 路由地址误判为目标收件人。
+function extractMail2925DetailRecipientEmails(text = '') {
+  const normalized = normalizeNodeText(text);
+  const sectionMatch = normalized.match(/收件人\s*[:：]\s*([\s\S]{0,320}?)(?:\s+(?:时\s*间|时间|查看附件|OpenAI|发件人\s*[:：]|主题\s*[:：]))/i);
+  if (sectionMatch) {
+    const sectionEmails = extractEmails(sectionMatch[1]);
+    if (sectionEmails.length) {
+      return sectionEmails;
+    }
+  }
+
+  const recipientIndex = normalized.search(/收件人\s*[:：]/);
+  if (recipientIndex < 0) {
+    return [];
+  }
+
+  return extractEmails(normalized.slice(recipientIndex, recipientIndex + 320));
+}
+
+// 点击详情后以“收件人”字段为准校验目标邮箱；没有目标或没有识别到收件人时不拦截。
+function getMail2925RecipientEmailMatchState(text, targetEmail) {
+  const normalizedTarget = String(targetEmail || '').trim().toLowerCase();
+  if (!normalizedTarget) {
+    return { matches: true, hasExplicitEmail: false, recipients: [] };
+  }
+
+  const recipients = extractMail2925DetailRecipientEmails(text);
+  if (!recipients.length) {
+    return { matches: true, hasExplicitEmail: false, recipients: [] };
+  }
+
+  return {
+    matches: recipients.some((candidate) => emailMatchesTarget(candidate, normalizedTarget)),
+    hasExplicitEmail: true,
+    recipients,
   };
 }
 
@@ -1294,6 +1376,7 @@ async function handlePollEmail(step, payload) {
     targetEmailHints = [],
     mail2925MatchTargetEmail = false,
   } = payload || {};
+  const shouldMatchTargetEmail = Boolean(mail2925MatchTargetEmail || String(targetEmail || '').trim());
   const excludedCodeSet = new Set(excludeCodes.filter(Boolean));
   const filterAfterMinute = normalizeMinuteTimestamp(Number(filterAfterTimestamp) || 0);
   if (typeof throwIfMail2925LimitReached === 'function') {
@@ -1354,10 +1437,10 @@ async function handlePollEmail(step, payload) {
         if (!matchesMailFilters(previewText, senderFilters, subjectFilters)) {
           continue;
         }
-        const previewTargetState = mail2925MatchTargetEmail
+        const previewTargetState = shouldMatchTargetEmail
           ? getTargetEmailMatchState(previewText, targetEmail, { targetEmailHints })
           : { matches: true, hasExplicitEmail: false };
-        if (mail2925MatchTargetEmail && previewTargetState.hasExplicitEmail && !previewTargetState.matches) {
+        if (shouldMatchTargetEmail && previewTargetState.hasExplicitEmail && !previewTargetState.matches) {
           continue;
         }
 
@@ -1365,18 +1448,35 @@ async function handlePollEmail(step, payload) {
           codePatterns,
         });
         const openedText = await openMailAndDeleteAfterRead(item, step);
-        const openedTargetState = mail2925MatchTargetEmail
-          ? getTargetEmailMatchState(openedText, targetEmail, { targetEmailHints })
+        const openedTargetState = shouldMatchTargetEmail
+          ? getMail2925RecipientEmailMatchState(openedText, targetEmail)
           : { matches: true, hasExplicitEmail: false };
-        if (mail2925MatchTargetEmail && openedTargetState.hasExplicitEmail && !openedTargetState.matches) {
+        if (shouldMatchTargetEmail && !openedTargetState.hasExplicitEmail) {
+          log(
+            `步骤 ${step}：详情页未识别到收件人，无法确认是否属于目标邮箱 ${targetEmail || '未设置'}，继续等待下一封邮件。`,
+            'warn'
+          );
+          continue;
+        }
+        if (shouldMatchTargetEmail && openedTargetState.hasExplicitEmail && !openedTargetState.matches) {
+          log(
+            `步骤 ${step}：详情页收件人 ${openedTargetState.recipients?.join(', ') || '未知'} 与目标邮箱 ${targetEmail || '未设置'} 不一致，继续等待下一封邮件。`,
+            'warn'
+          );
           continue;
         }
         const bodyCode = extractVerificationCode(openedText, {
           codePatterns,
         });
-        const candidateCode = bodyCode || previewCode;
+        const candidateCode = shouldMatchTargetEmail ? bodyCode : (bodyCode || previewCode);
 
         if (!candidateCode) {
+          if (shouldMatchTargetEmail && previewCode) {
+            log(
+              `步骤 ${step}：详情页未识别到正文验证码，已忽略预览验证码 ${previewCode}，继续等待下一封邮件。`,
+              'warn'
+            );
+          }
           continue;
         }
 

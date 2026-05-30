@@ -43,6 +43,57 @@
       throwIfAutoRunSessionStopped,
       waitForRunningNodesToFinish,
     } = deps;
+    const PHONE_NO_SUPPLY_RETRY_COUNT_MIN = 0;
+    const PHONE_NO_SUPPLY_RETRY_COUNT_MAX = 20;
+    const DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT = 3;
+    const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MIN = 0;
+    const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX = 300;
+    const DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS = 5;
+    const MILLISECONDS_PER_SECOND = 1000;
+
+    // 读取并限制同一轮无号重试次数，避免异常配置造成无限循环。
+    function normalizePhoneNoSupplyRetryCount(value, fallback = DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT) {
+      const rawValue = String(value ?? '').trim();
+      const parsed = Number.parseInt(rawValue, 10);
+      if (!Number.isFinite(parsed)) {
+        return Math.max(
+          PHONE_NO_SUPPLY_RETRY_COUNT_MIN,
+          Math.min(PHONE_NO_SUPPLY_RETRY_COUNT_MAX, Number(fallback) || DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT)
+        );
+      }
+      return Math.max(PHONE_NO_SUPPLY_RETRY_COUNT_MIN, Math.min(PHONE_NO_SUPPLY_RETRY_COUNT_MAX, parsed));
+    }
+
+    // 读取并限制同一轮无号重试间隔，允许 0 秒用于快速重试。
+    function normalizePhoneNoSupplyRetryDelaySeconds(value, fallback = DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS) {
+      const rawValue = String(value ?? '').trim();
+      const parsed = Number.parseInt(rawValue, 10);
+      if (!Number.isFinite(parsed)) {
+        return Math.max(
+          PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MIN,
+          Math.min(
+            PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX,
+            Number(fallback) || DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS
+          )
+        );
+      }
+      return Math.max(
+        PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MIN,
+        Math.min(PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX, parsed)
+      );
+    }
+
+    // 汇总无号重试配置，关闭或次数为 0 时不改变原有失败处理。
+    function getPhoneNoSupplyRetrySettings(state = {}) {
+      const retryCount = normalizePhoneNoSupplyRetryCount(state.phoneNoSupplyRetryCount);
+      const retryDelaySeconds = normalizePhoneNoSupplyRetryDelaySeconds(state.phoneNoSupplyRetryDelaySeconds);
+      return {
+        enabled: Boolean(state.phoneNoSupplyRetryEnabled) && retryCount > 0,
+        retryCount,
+        retryDelaySeconds,
+        retryDelayMs: retryDelaySeconds * MILLISECONDS_PER_SECOND,
+      };
+    }
 
     function getRunningWorkflowNodes(state = {}) {
       if (typeof getRunningNodeIds === 'function') {
@@ -158,6 +209,9 @@
         kiroRsKey: state.kiroRsKey,
         autoRunSkipFailures: state.autoRunSkipFailures,
         autoRunFallbackThreadIntervalMinutes: state.autoRunFallbackThreadIntervalMinutes,
+        phoneNoSupplyRetryEnabled: state.phoneNoSupplyRetryEnabled,
+        phoneNoSupplyRetryCount: state.phoneNoSupplyRetryCount,
+        phoneNoSupplyRetryDelaySeconds: state.phoneNoSupplyRetryDelaySeconds,
         autoStepDelaySeconds: state.autoStepDelaySeconds,
         stepExecutionRangeByFlow: state.stepExecutionRangeByFlow,
         signupMethod: state.signupMethod,
@@ -277,6 +331,13 @@
       return normalizeRecordNode(errorLike.failedNodeId)
         || normalizeRecordNode(errorLike.nodeId)
         || normalizeRecordNode(errorLike.currentNodeId);
+    }
+
+    // 无号重试必须回到取号所在节点，不能因为步骤 1 未完成而重新打开官网。
+    function resolvePhoneNoSupplyRetryStartNode(errorLike = null, state = {}) {
+      return inferRecordNodeFromError(errorLike, state)
+        || inferRecordNodeFromState(state, ['failed', 'running'])
+        || 'submit-signup-email';
     }
 
     function resolveAutoRunAccountRecordStatus(status, state = {}, errorLike = null) {
@@ -586,6 +647,8 @@
         let roundRecordAppended = false;
         const resumingCurrentRound = continueCurrentOnFirstAttempt && targetRun === resumeCurrentRun;
         let attemptRun = resumingCurrentRound ? resumeAttemptRun : 1;
+        let phoneNoSupplyRetryRun = 0;
+        let phoneNoSupplyRetryStartNodeId = '';
         let reuseExistingProgress = resumingCurrentRound;
         const currentRoundState = await getState();
         const keepSameEmailUntilAddPhone = autoRunSkipFailures && shouldKeepCustomMailProviderPoolEmail(currentRoundState);
@@ -613,8 +676,9 @@
                 attemptRun,
               });
             }
-            const resumeNodeId = getFirstUnfinishedWorkflowNode(currentState);
-            if (resumeNodeId && hasSavedWorkflowProgress(currentState)) {
+            const forcedResumeNodeId = normalizeRecordNode(phoneNoSupplyRetryStartNodeId);
+            const resumeNodeId = forcedResumeNodeId || getFirstUnfinishedWorkflowNode(currentState);
+            if (resumeNodeId && (forcedResumeNodeId || hasSavedWorkflowProgress(currentState))) {
               startNodeId = resumeNodeId;
               useExistingProgress = true;
             } else if (hasSavedWorkflowProgress(currentState)) {
@@ -673,6 +737,8 @@
               roundRecordAppended = true;
             }
           };
+
+          let preserveExistingProgressForNextAttempt = false;
 
           try {
             throwIfAutoRunSessionStopped(sessionId);
@@ -756,6 +822,36 @@
             await setState({
               autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
             });
+
+            if (blockedByPhoneNoSupply) {
+              const phoneNoSupplyRetrySettings = getPhoneNoSupplyRetrySettings(await getState());
+              if (
+                phoneNoSupplyRetrySettings.enabled
+                && phoneNoSupplyRetryRun < phoneNoSupplyRetrySettings.retryCount
+              ) {
+                phoneNoSupplyRetryRun += 1;
+                const phoneNoSupplyRetryState = await getState();
+                phoneNoSupplyRetryStartNodeId = resolvePhoneNoSupplyRetryStartNode(err, phoneNoSupplyRetryState);
+                cancelPendingCommands('当前轮接码号池暂无可用号码，将在同一轮重新获取手机号。');
+                await broadcastStopToContentScripts();
+                await addLog(
+                  `第 ${targetRun}/${totalRuns} 轮接码号池暂无可用号码，${phoneNoSupplyRetrySettings.retryDelaySeconds} 秒后同一轮从当前未完成步骤重新获取手机号（无号重试 ${phoneNoSupplyRetryRun}/${phoneNoSupplyRetrySettings.retryCount}）。`,
+                  'warn'
+                );
+                await broadcastAutoRunStatus('retrying', {
+                  currentRun: targetRun,
+                  totalRuns,
+                  attemptRun,
+                  sessionId,
+                });
+                reuseExistingProgress = true;
+                preserveExistingProgressForNextAttempt = true;
+                if (phoneNoSupplyRetrySettings.retryDelayMs > 0) {
+                  await sleepWithStop(phoneNoSupplyRetrySettings.retryDelayMs);
+                }
+                continue;
+              }
+            }
 
             if (blockedByAddPhone) {
               roundSummary.status = 'failed';
@@ -1087,7 +1183,9 @@
             forceFreshTabsNextRun = true;
             break;
           } finally {
-            reuseExistingProgress = false;
+            if (!preserveExistingProgressForNextAttempt) {
+              reuseExistingProgress = false;
+            }
             continueCurrentOnFirstAttempt = false;
           }
         }

@@ -67,6 +67,8 @@ test('background account history settings are normalized independently from hotm
     extractFunction('normalizeNexSmsServiceCode'),
     extractFunction('normalizePhonePreferredActivation'),
     extractFunction('normalizePhoneVerificationReplacementLimit'),
+    extractFunction('normalizePhoneNoSupplyRetryCount'),
+    extractFunction('normalizePhoneNoSupplyRetryDelaySeconds'),
     extractFunction('normalizePhoneCodeWaitSeconds'),
     extractFunction('normalizePhoneCodeTimeoutWindows'),
     extractFunction('normalizePhoneCodePollIntervalSeconds'),
@@ -95,6 +97,12 @@ const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 const PHONE_REPLACEMENT_LIMIT_MIN = 1;
 const PHONE_REPLACEMENT_LIMIT_MAX = 20;
 const DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT = 3;
+const PHONE_NO_SUPPLY_RETRY_COUNT_MIN = 0;
+const PHONE_NO_SUPPLY_RETRY_COUNT_MAX = 20;
+const DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT = 3;
+const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MIN = 0;
+const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX = 300;
+const DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS = 5;
 const PHONE_CODE_WAIT_SECONDS_MIN = 15;
 const PHONE_CODE_WAIT_SECONDS_MAX = 300;
 const DEFAULT_PHONE_CODE_WAIT_SECONDS = 60;
@@ -271,6 +279,11 @@ return {
   assert.equal(api.normalizePersistentSettingValue('verificationResendCount', '-1'), 0);
   assert.equal(api.normalizePersistentSettingValue('phoneVerificationReplacementLimit', '9'), 9);
   assert.equal(api.normalizePersistentSettingValue('phoneVerificationReplacementLimit', '-1'), 1);
+  assert.equal(api.normalizePersistentSettingValue('phoneNoSupplyRetryEnabled', 1), true);
+  assert.equal(api.normalizePersistentSettingValue('phoneNoSupplyRetryCount', '9'), 9);
+  assert.equal(api.normalizePersistentSettingValue('phoneNoSupplyRetryCount', '99'), 20);
+  assert.equal(api.normalizePersistentSettingValue('phoneNoSupplyRetryDelaySeconds', '8'), 8);
+  assert.equal(api.normalizePersistentSettingValue('phoneNoSupplyRetryDelaySeconds', '999'), 300);
   assert.equal(api.normalizePersistentSettingValue('phoneCodeWaitSeconds', '75'), 75);
   assert.equal(api.normalizePersistentSettingValue('phoneCodeTimeoutWindows', '3'), 3);
   assert.equal(api.normalizePersistentSettingValue('phoneCodePollIntervalSeconds', '6'), 6);

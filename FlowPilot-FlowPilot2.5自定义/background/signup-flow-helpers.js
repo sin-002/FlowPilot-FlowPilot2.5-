@@ -353,6 +353,8 @@
         const purchase = await ensureLuckmailPurchaseForFlow({ allowReuse: true });
         resolvedEmail = purchase.email_address;
       } else if (isGeneratedAliasProvider(state)) {
+        const generatedAliasProvider = String(state?.mailProvider || '').trim().toLowerCase();
+        const shouldForceNewAlias = generatedAliasProvider === '2925';
         if (Boolean(state?.mail2925UseAccountPool)
           && String(state?.mailProvider || '').trim().toLowerCase() === '2925'
           && typeof ensureMail2925AccountForFlow === 'function') {
@@ -362,7 +364,7 @@
             markUsed: true,
           });
         }
-        if (!isReusableGeneratedAliasEmail?.(state, resolvedEmail)) {
+        if (shouldForceNewAlias || !isReusableGeneratedAliasEmail?.(state, resolvedEmail)) {
           resolvedEmail = buildGeneratedAliasEmail(state);
         }
       } else if (!resolvedEmail && typeof fetchGeneratedEmail === 'function') {

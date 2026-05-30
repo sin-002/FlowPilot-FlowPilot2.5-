@@ -653,6 +653,12 @@ const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 const PHONE_REPLACEMENT_LIMIT_MIN = 1;
 const PHONE_REPLACEMENT_LIMIT_MAX = 20;
 const DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT = 3;
+const PHONE_NO_SUPPLY_RETRY_COUNT_MIN = 0;
+const PHONE_NO_SUPPLY_RETRY_COUNT_MAX = 20;
+const DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT = 3;
+const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MIN = 0;
+const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX = 300;
+const DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS = 5;
 const PHONE_CODE_WAIT_SECONDS_MIN = 15;
 const PHONE_CODE_WAIT_SECONDS_MAX = 300;
 const DEFAULT_PHONE_CODE_WAIT_SECONDS = 60;
@@ -1386,6 +1392,9 @@ const PERSISTED_SETTING_DEFAULTS = {
   phoneSmsProviderOrder: [],
   verificationResendCount: DEFAULT_VERIFICATION_RESEND_COUNT,
   phoneVerificationReplacementLimit: DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT,
+  phoneNoSupplyRetryEnabled: false,
+  phoneNoSupplyRetryCount: DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT,
+  phoneNoSupplyRetryDelaySeconds: DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS,
   phoneCodeWaitSeconds: DEFAULT_PHONE_CODE_WAIT_SECONDS,
   phoneCodeTimeoutWindows: DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS,
   phoneCodePollIntervalSeconds: DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS,
@@ -1659,6 +1668,26 @@ function normalizePhoneVerificationReplacementLimit(value, fallback = DEFAULT_PH
   return Math.min(
     PHONE_REPLACEMENT_LIMIT_MAX,
     Math.max(PHONE_REPLACEMENT_LIMIT_MIN, Math.floor(numeric))
+  );
+}
+
+// 归一化同一轮无号重试次数，避免导入配置写入越界值。
+function normalizePhoneNoSupplyRetryCount(value, fallback = DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT) {
+  return normalizeBoundedIntegerSetting(
+    value,
+    fallback,
+    PHONE_NO_SUPPLY_RETRY_COUNT_MIN,
+    PHONE_NO_SUPPLY_RETRY_COUNT_MAX
+  );
+}
+
+// 归一化同一轮无号重试等待秒数，允许 0 秒快速重试。
+function normalizePhoneNoSupplyRetryDelaySeconds(value, fallback = DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS) {
+  return normalizeBoundedIntegerSetting(
+    value,
+    fallback,
+    PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MIN,
+    PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX
   );
 }
 
@@ -2675,6 +2704,15 @@ async function markCurrentRegistrationAccountUsed(state = {}, options = {}) {
       lastError: '',
     });
     await addLog(`${reasonPrefix}：2925 账号已记录最近使用时间。`, options.level || 'warn');
+    await setState({
+      email: null,
+      registrationEmailState: null,
+    });
+    broadcastDataUpdate({
+      email: null,
+      registrationEmailState: null,
+    });
+    await addLog(`${reasonPrefix}：2925 邮箱运行态已清空，下轮将重新生成邮箱。`, options.level || 'warn');
     updated = true;
   }
 
@@ -3364,6 +3402,7 @@ function normalizePersistentSettingValue(key, value) {
     case 'phoneSmsReuseEnabled':
     case 'freePhoneReuseEnabled':
     case 'freePhoneReuseAutoEnabled':
+    case 'phoneNoSupplyRetryEnabled':
     case 'plusModeEnabled':
       return Boolean(value);
     case 'phoneSmsProvider':
@@ -3378,6 +3417,10 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeVerificationResendCount(value, DEFAULT_VERIFICATION_RESEND_COUNT);
     case 'phoneVerificationReplacementLimit':
       return normalizePhoneVerificationReplacementLimit(value, DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT);
+    case 'phoneNoSupplyRetryCount':
+      return normalizePhoneNoSupplyRetryCount(value, DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT);
+    case 'phoneNoSupplyRetryDelaySeconds':
+      return normalizePhoneNoSupplyRetryDelaySeconds(value, DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS);
     case 'phoneCodeWaitSeconds':
       return normalizePhoneCodeWaitSeconds(value, DEFAULT_PHONE_CODE_WAIT_SECONDS);
     case 'phoneCodeTimeoutWindows':

@@ -123,6 +123,12 @@ test('sidepanel html exposes phone verification toggle and multi-provider SMS ro
   assert.match(html, /白嫖复用/);
   assert.match(html, /自动白嫖复用/);
   assert.match(html, /id="row-phone-replacement-limit"/);
+  assert.match(html, /id="row-phone-no-supply-retry-enabled"/);
+  assert.match(html, /id="input-phone-no-supply-retry-enabled"/);
+  assert.match(html, /id="row-phone-no-supply-retry-count"/);
+  assert.match(html, /id="input-phone-no-supply-retry-count"/);
+  assert.match(html, /id="row-phone-no-supply-retry-delay-seconds"/);
+  assert.match(html, /id="input-phone-no-supply-retry-delay-seconds"/);
   assert.match(html, /id="row-phone-verification-resend-count"/);
   assert.match(html, /id="row-phone-code-wait-seconds"/);
   assert.match(html, /id="row-phone-code-timeout-windows"/);
@@ -1007,6 +1013,9 @@ const inputHeroSmsMaxPrice = { value: '0.12' };
 const inputHeroSmsMinPrice = { value: '0.03' };
 const inputHeroSmsPreferredPrice = { value: '0.0512' };
 const inputPhoneReplacementLimit = { value: '5' };
+const inputPhoneNoSupplyRetryEnabled = { checked: true };
+const inputPhoneNoSupplyRetryCount = { value: '4' };
+const inputPhoneNoSupplyRetryDelaySeconds = { value: '8' };
 const inputPhoneCodeWaitSeconds = { value: '75' };
 const inputPhoneCodeTimeoutWindows = { value: '3' };
 const inputPhoneCodePollIntervalSeconds = { value: '6' };
@@ -1032,6 +1041,12 @@ const HERO_SMS_ACQUIRE_PRIORITY_PRICE = 'price';
 const DEFAULT_HERO_SMS_ACQUIRE_PRIORITY = HERO_SMS_ACQUIRE_PRIORITY_COUNTRY;
 const PHONE_REPLACEMENT_LIMIT_MIN = 1;
 const PHONE_REPLACEMENT_LIMIT_MAX = 20;
+const PHONE_NO_SUPPLY_RETRY_COUNT_MIN = 0;
+const PHONE_NO_SUPPLY_RETRY_COUNT_MAX = 20;
+const DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT = 3;
+const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MIN = 0;
+const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX = 300;
+const DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS = 5;
 const DEFAULT_HERO_SMS_COUNTRY_ID = 52;
 const DEFAULT_HERO_SMS_COUNTRY_LABEL = 'Thailand';
 const PHONE_SMS_PROVIDER_HERO_SMS = 'hero-sms';
@@ -1092,6 +1107,8 @@ ${extractFunction('normalizePhoneSmsMaxPriceValue')}
 ${extractFunction('normalizePhoneSmsMinPriceValue')}
 ${extractFunction('normalizeHeroSmsMaxPriceValue')}
 ${extractFunction('normalizePhoneVerificationReplacementLimit')}
+${extractFunction('normalizePhoneNoSupplyRetryCountValue')}
+${extractFunction('normalizePhoneNoSupplyRetryDelaySecondsValue')}
 ${extractFunction('normalizePhoneCodeWaitSecondsValue')}
 ${extractFunction('normalizePhoneCodeTimeoutWindowsValue')}
 ${extractFunction('normalizePhoneCodePollIntervalSecondsValue')}
@@ -1156,6 +1173,9 @@ return { collectSettingsPayload };
     maxUses: 3,
   });
   assert.equal(payload.phoneVerificationReplacementLimit, 5);
+  assert.equal(payload.phoneNoSupplyRetryEnabled, true);
+  assert.equal(payload.phoneNoSupplyRetryCount, 4);
+  assert.equal(payload.phoneNoSupplyRetryDelaySeconds, 8);
   assert.equal(payload.phoneCodeWaitSeconds, 75);
   assert.equal(payload.phoneCodeTimeoutWindows, 3);
   assert.equal(payload.phoneCodePollIntervalSeconds, 6);

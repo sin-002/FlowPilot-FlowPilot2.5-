@@ -101,3 +101,46 @@ test('signup flow helper skips mail2925 account allocation when account pool swi
   assert.equal(email, 'manual123456@2925.com');
   assert.equal(calls.ensureMail2925, 0);
 });
+
+test('signup flow helper regenerates mail2925 alias instead of reusing previous run email', async () => {
+  const calls = {
+    buildAlias: 0,
+    setEmail: [],
+  };
+
+  const helpers = signupFlowApi.createSignupFlowHelpers({
+    buildGeneratedAliasEmail: () => {
+      calls.buildAlias += 1;
+      return 'demo654321@2925.com';
+    },
+    chrome: { tabs: { get: async () => ({ id: 1, url: 'https://auth.openai.com/create-account/password' }) } },
+    ensureContentScriptReadyOnTab: async () => {},
+    ensureHotmailAccountForFlow: async () => ({}),
+    ensureMail2925AccountForFlow: async () => ({ id: 'acc-2', email: 'demo@2925.com' }),
+    ensureLuckmailPurchaseForFlow: async () => ({}),
+    isGeneratedAliasProvider: () => true,
+    isReusableGeneratedAliasEmail: (_state, email) => email === 'demo123456@2925.com',
+    isHotmailProvider: () => false,
+    isLuckmailProvider: () => false,
+    isSignupEmailVerificationPageUrl: () => false,
+    isSignupPasswordPageUrl: () => true,
+    reuseOrCreateTab: async () => 1,
+    sendToContentScriptResilient: async () => ({}),
+    setEmailState: async (email) => {
+      calls.setEmail.push(email);
+    },
+    SIGNUP_ENTRY_URL: 'https://chatgpt.com/',
+    OPENAI_AUTH_INJECT_FILES: [],
+    waitForTabUrlMatch: async () => null,
+  });
+
+  const email = await helpers.resolveSignupEmailForFlow({
+    mailProvider: '2925',
+    mail2925UseAccountPool: false,
+    email: 'demo123456@2925.com',
+  });
+
+  assert.equal(email, 'demo654321@2925.com');
+  assert.equal(calls.buildAlias, 1);
+  assert.deepStrictEqual(calls.setEmail, ['demo654321@2925.com']);
+});

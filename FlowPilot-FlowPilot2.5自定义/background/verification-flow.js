@@ -444,8 +444,10 @@
       }
       const normalizedStep = Number(step) === 4 ? 4 : 8;
       const is2925Provider = state?.mailProvider === '2925';
-      const mail2925MatchTargetEmail = is2925Provider
-        && String(state?.mail2925Mode || '').trim().toLowerCase() === 'receive';
+      const targetEmail = normalizedStep === 4
+        ? state.email
+        : (String(state?.step8VerificationTargetEmail || '').trim() || state.email);
+      const mail2925MatchTargetEmail = is2925Provider && Boolean(String(targetEmail || '').trim());
       return {
         flowId: String(state?.activeFlowId || '').trim(),
         step: normalizedStep,
@@ -454,9 +456,7 @@
         subjectFilters: [],
         requiredKeywords: [],
         codePatterns: [],
-        targetEmail: normalizedStep === 4
-          ? state.email
-          : (String(state?.step8VerificationTargetEmail || '').trim() || state.email),
+        targetEmail,
         targetEmailHints: [],
         mail2925MatchTargetEmail,
         maxAttempts: is2925Provider ? MAIL_2925_VERIFICATION_MAX_ATTEMPTS : 5,

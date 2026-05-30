@@ -227,7 +227,7 @@ test('verification flow keeps iCloud step 8 polling at least five attempts befor
   );
 });
 
-test('verification flow only enables 2925 target email matching in receive mode', () => {
+test('verification flow enables 2925 target email matching whenever a target email exists', () => {
   const helpers = api.createVerificationFlowHelpers({
     addLog: async () => {},
     chrome: { tabs: { update: async () => {} } },
@@ -266,7 +266,7 @@ test('verification flow only enables 2925 target email matching in receive mode'
     mail2925Mode: 'receive',
   });
 
-  assert.equal(providePayload.mail2925MatchTargetEmail, false);
+  assert.equal(providePayload.mail2925MatchTargetEmail, true);
   assert.equal(receivePayload.mail2925MatchTargetEmail, true);
 });
 
@@ -980,7 +980,7 @@ test('verification flow keeps 2925 mailbox polling at 15 refresh attempts even w
   assert.ok(pollCall.options.timeoutMs >= 250000);
 });
 
-test('verification flow can run a 2/3/15 2925 resend polling plan', async () => {
+test('verification flow can run a 5/3/15 2925 resend polling plan', async () => {
   const events = [];
   const pollMaxAttempts = [];
   let pollCalls = 0;
@@ -1040,7 +1040,7 @@ test('verification flow can run a 2/3/15 2925 resend polling plan', async () => 
     {
       maxResendRequests: 2,
       initialPollMaxAttempts: 5,
-      pollAttemptPlan: [2, 3, 15],
+      pollAttemptPlan: [5, 3, 15],
       requestFreshCodeFirst: false,
       filterAfterTimestamp: 123,
       resendIntervalMs: 0,
@@ -1048,7 +1048,7 @@ test('verification flow can run a 2/3/15 2925 resend polling plan', async () => 
   );
 
   assert.deepStrictEqual(events.slice(0, 5), ['poll', 'resend', 'poll', 'resend', 'poll']);
-  assert.deepStrictEqual(pollMaxAttempts.slice(0, 3), [2, 3, 15]);
+  assert.deepStrictEqual(pollMaxAttempts.slice(0, 3), [5, 3, 15]);
   assert.equal(events.filter((event) => event === 'resend').length, 2);
 });
 

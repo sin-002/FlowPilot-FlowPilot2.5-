@@ -104,3 +104,81 @@ return { markCurrentRegistrationAccountUsed, patchCalls, logs };
   assert.equal(api.patchCalls[0].updates.used, true);
   assert.equal(api.logs.some((entry) => /Hotmail 账号已标记为已用/.test(entry.message)), true);
 });
+
+test('markCurrentRegistrationAccountUsed clears mail2925 runtime email after successful flow', async () => {
+  const bundle = extractFunction('markCurrentRegistrationAccountUsed');
+  const factory = new Function(`
+const patchCalls = [];
+const logs = [];
+const stateUpdates = [];
+async function getState() {
+  return {
+    mailProvider: '2925',
+    currentMail2925AccountId: 'mail-2925-1',
+    email: 'demo123456@2925.com',
+    registrationEmailState: {
+      current: 'demo123456@2925.com',
+      previous: 'demo123456@2925.com',
+      source: 'flow',
+      updatedAt: 1,
+    },
+  };
+}
+function isHotmailProvider() {
+  return false;
+}
+function isLuckmailProvider() {
+  return false;
+}
+function getCurrentLuckmailPurchase() {
+  return null;
+}
+async function patchHotmailAccount() {}
+async function setLuckmailPurchaseUsedState() {}
+async function clearLuckmailRuntimeState() {}
+async function patchMail2925Account(id, updates) {
+  patchCalls.push({ id, updates });
+}
+async function finalizeIcloudAliasAfterSuccessfulFlow() {
+  return { handled: false };
+}
+async function markCurrentCustomEmailPoolEntryUsed() {
+  return { updated: false };
+}
+async function addLog(message, level) {
+  logs.push({ message, level });
+}
+async function setState(updates) {
+  stateUpdates.push(updates);
+}
+function broadcastDataUpdate(updates) {
+  stateUpdates.push({ broadcast: updates });
+}
+
+${bundle}
+
+return { markCurrentRegistrationAccountUsed, patchCalls, logs, stateUpdates };
+`);
+  const api = factory();
+
+  const result = await api.markCurrentRegistrationAccountUsed({}, {
+    logPrefix: '流程完成',
+    level: 'ok',
+  });
+
+  assert.equal(result.updated, true);
+  assert.equal(api.patchCalls.length, 1);
+  assert.equal(api.patchCalls[0].id, 'mail-2925-1');
+  assert.deepStrictEqual(api.stateUpdates[0], {
+    email: null,
+    registrationEmailState: null,
+  });
+  assert.deepStrictEqual(api.stateUpdates[1], {
+    broadcast: {
+      email: null,
+      registrationEmailState: null,
+    },
+  });
+  assert.equal(api.logs.some((entry) => /2925 账号已记录最近使用时间/.test(entry.message)), true);
+  assert.equal(api.logs.some((entry) => /2925 邮箱运行态已清空/.test(entry.message)), true);
+});

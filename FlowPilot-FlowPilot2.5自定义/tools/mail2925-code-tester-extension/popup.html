@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2925 验证码识别测试</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="panel">
+    <header class="header">
+      <div>
+        <h1>2925 验证码识别测试</h1>
+        <p id="page-url" class="muted">正在读取当前页面...</p>
+      </div>
+      <button id="scan-button" type="button">重新识别</button>
+    </header>
+
+    <section class="section">
+      <label class="section-title" for="target-email">当前流程邮箱</label>
+      <input id="target-email" class="email-input" type="email" placeholder="输入当前流程使用的邮箱">
+      <div id="recipient-status" class="recipient-status">输入邮箱后重新识别，会检查详情页收件人是否一致。</div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">详情页收件人</div>
+      <div id="recipients" class="recipients">暂无</div>
+    </section>
+
+    <section class="result-card">
+      <span class="label">识别结果</span>
+      <div id="code" class="code">--</div>
+      <div id="source" class="source">等待扫描</div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">候选数字</div>
+      <div id="candidates" class="candidates">暂无</div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">页面文本片段</div>
+      <pre id="preview" class="preview">暂无</pre>
+    </section>
+
+    <footer id="status" class="status">打开 2925 邮件详情页后点击扩展。</footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -78,6 +78,8 @@ test('mail rule registry exposes canonical OpenAI verification poll payloads', (
       activeFlowId: 'openai',
       email: 'user@example.com',
       step8VerificationTargetEmail: 'login@example.com',
+      mailProvider: '2925',
+      mail2925Mode: 'provide',
     }),
     {
       flowId: 'openai',
@@ -99,15 +101,15 @@ test('mail rule registry exposes canonical OpenAI verification poll payloads', (
           flags: 'i',
         },
       ],
-      filterAfterTimestamp: 456,
+      filterAfterTimestamp: 0,
       requiredKeywords: ['openai', 'chatgpt', 'verify', 'verification', 'confirm', '验证码', '代码', 'login'],
       senderFilters: ['openai', 'noreply', 'verify', 'auth', 'chatgpt', 'duckduckgo', 'forward'],
       subjectFilters: ['verify', 'verification', 'code', '验证码', 'confirm', 'login'],
       targetEmail: 'login@example.com',
       targetEmailHints: ['login@example.com', 'login=example.com'],
-      mail2925MatchTargetEmail: false,
-      maxAttempts: 5,
-      intervalMs: 3000,
+      mail2925MatchTargetEmail: true,
+      maxAttempts: 15,
+      intervalMs: 15000,
     }
   );
 

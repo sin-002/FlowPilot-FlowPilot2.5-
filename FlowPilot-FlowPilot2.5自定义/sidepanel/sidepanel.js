@@ -472,6 +472,9 @@ const rowHeroSmsPreferredActivation = document.getElementById('row-hero-sms-pref
 const rowPhoneCodeSettingsGroup = document.getElementById('row-phone-code-settings-group');
 const rowPhoneVerificationResendCount = document.getElementById('row-phone-verification-resend-count');
 const rowPhoneReplacementLimit = document.getElementById('row-phone-replacement-limit');
+const rowPhoneNoSupplyRetryEnabled = document.getElementById('row-phone-no-supply-retry-enabled');
+const rowPhoneNoSupplyRetryCount = document.getElementById('row-phone-no-supply-retry-count');
+const rowPhoneNoSupplyRetryDelaySeconds = document.getElementById('row-phone-no-supply-retry-delay-seconds');
 const rowPhoneCodeWaitSeconds = document.getElementById('row-phone-code-wait-seconds');
 const rowPhoneCodeTimeoutWindows = document.getElementById('row-phone-code-timeout-windows');
 const rowPhoneCodePollIntervalSeconds = document.getElementById('row-phone-code-poll-interval-seconds');
@@ -492,6 +495,9 @@ const inputHeroSmsMinPrice = document.getElementById('input-hero-sms-min-price')
 const inputHeroSmsMaxPrice = document.getElementById('input-hero-sms-max-price');
 const inputHeroSmsPreferredPrice = document.getElementById('input-hero-sms-preferred-price');
 const inputPhoneReplacementLimit = document.getElementById('input-phone-replacement-limit');
+const inputPhoneNoSupplyRetryEnabled = document.getElementById('input-phone-no-supply-retry-enabled');
+const inputPhoneNoSupplyRetryCount = document.getElementById('input-phone-no-supply-retry-count');
+const inputPhoneNoSupplyRetryDelaySeconds = document.getElementById('input-phone-no-supply-retry-delay-seconds');
 const inputPhoneCodeWaitSeconds = document.getElementById('input-phone-code-wait-seconds');
 const inputPhoneCodeTimeoutWindows = document.getElementById('input-phone-code-timeout-windows');
 const inputPhoneCodePollIntervalSeconds = document.getElementById('input-phone-code-poll-interval-seconds');
@@ -642,6 +648,12 @@ const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 const PHONE_REPLACEMENT_LIMIT_MIN = 1;
 const PHONE_REPLACEMENT_LIMIT_MAX = 20;
 const DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT = 3;
+const PHONE_NO_SUPPLY_RETRY_COUNT_MIN = 0;
+const PHONE_NO_SUPPLY_RETRY_COUNT_MAX = 20;
+const DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT = 3;
+const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MIN = 0;
+const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX = 300;
+const DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS = 5;
 const PHONE_CODE_WAIT_SECONDS_MIN = 15;
 const PHONE_CODE_WAIT_SECONDS_MAX = 300;
 const DEFAULT_PHONE_CODE_WAIT_SECONDS = 60;
@@ -4591,6 +4603,12 @@ function collectSettingsPayload() {
   const defaultPhoneCodePollMaxRounds = typeof DEFAULT_PHONE_CODE_POLL_MAX_ROUNDS !== 'undefined'
     ? DEFAULT_PHONE_CODE_POLL_MAX_ROUNDS
     : 12;
+  const defaultPhoneNoSupplyRetryCount = typeof DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT !== 'undefined'
+    ? DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT
+    : 3;
+  const defaultPhoneNoSupplyRetryDelaySeconds = typeof DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS !== 'undefined'
+    ? DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS
+    : 5;
   const selectedSignupMethod = typeof getSelectedSignupMethod === 'function'
     ? getSelectedSignupMethod()
     : (
@@ -4717,6 +4735,21 @@ function collectSettingsPayload() {
       latestState?.phoneVerificationReplacementLimit
     )
     : DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT;
+  const phoneNoSupplyRetryEnabledValue = typeof inputPhoneNoSupplyRetryEnabled !== 'undefined' && inputPhoneNoSupplyRetryEnabled
+    ? Boolean(inputPhoneNoSupplyRetryEnabled.checked)
+    : Boolean(latestState?.phoneNoSupplyRetryEnabled);
+  const phoneNoSupplyRetryCountValue = typeof inputPhoneNoSupplyRetryCount !== 'undefined' && inputPhoneNoSupplyRetryCount
+    ? normalizePhoneNoSupplyRetryCountValue(
+      inputPhoneNoSupplyRetryCount.value,
+      latestState?.phoneNoSupplyRetryCount
+    )
+    : defaultPhoneNoSupplyRetryCount;
+  const phoneNoSupplyRetryDelaySecondsValue = typeof inputPhoneNoSupplyRetryDelaySeconds !== 'undefined' && inputPhoneNoSupplyRetryDelaySeconds
+    ? normalizePhoneNoSupplyRetryDelaySecondsValue(
+      inputPhoneNoSupplyRetryDelaySeconds.value,
+      latestState?.phoneNoSupplyRetryDelaySeconds
+    )
+    : defaultPhoneNoSupplyRetryDelaySeconds;
   const phoneCodeWaitSecondsValue = typeof inputPhoneCodeWaitSeconds !== 'undefined' && inputPhoneCodeWaitSeconds
     ? normalizePhoneCodeWaitSecondsValue(
       inputPhoneCodeWaitSeconds.value,
@@ -5217,6 +5250,9 @@ function collectSettingsPayload() {
     heroSmsPreferredPrice: heroSmsPreferredPriceValue,
     phonePreferredActivation: phonePreferredActivationValue,
     phoneVerificationReplacementLimit: phoneVerificationReplacementLimitValue,
+    phoneNoSupplyRetryEnabled: phoneNoSupplyRetryEnabledValue,
+    phoneNoSupplyRetryCount: phoneNoSupplyRetryCountValue,
+    phoneNoSupplyRetryDelaySeconds: phoneNoSupplyRetryDelaySecondsValue,
     phoneCodeWaitSeconds: phoneCodeWaitSecondsValue,
     phoneCodeTimeoutWindows: phoneCodeTimeoutWindowsValue,
     phoneCodePollIntervalSeconds: phoneCodePollIntervalSecondsValue,
@@ -5990,6 +6026,41 @@ function normalizePhoneVerificationReplacementLimit(value, fallback = DEFAULT_PH
     );
   }
   return Math.max(PHONE_REPLACEMENT_LIMIT_MIN, Math.min(PHONE_REPLACEMENT_LIMIT_MAX, parsed));
+}
+
+// 归一化同一轮无号重试次数，避免侧边栏输入越界值。
+function normalizePhoneNoSupplyRetryCountValue(value, fallback = DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT) {
+  const rawValue = String(value ?? '').trim();
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed)) {
+    return Math.max(
+      PHONE_NO_SUPPLY_RETRY_COUNT_MIN,
+      Math.min(PHONE_NO_SUPPLY_RETRY_COUNT_MAX, Number(fallback) || DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT)
+    );
+  }
+  return Math.max(PHONE_NO_SUPPLY_RETRY_COUNT_MIN, Math.min(PHONE_NO_SUPPLY_RETRY_COUNT_MAX, parsed));
+}
+
+// 归一化同一轮无号重试等待秒数，允许 0 秒快速重试。
+function normalizePhoneNoSupplyRetryDelaySecondsValue(
+  value,
+  fallback = DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS
+) {
+  const rawValue = String(value ?? '').trim();
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed)) {
+    return Math.max(
+      PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MIN,
+      Math.min(
+        PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX,
+        Number(fallback) || DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS
+      )
+    );
+  }
+  return Math.max(
+    PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MIN,
+    Math.min(PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX, parsed)
+  );
 }
 
 function normalizePhoneCodeWaitSecondsValue(value, fallback = DEFAULT_PHONE_CODE_WAIT_SECONDS) {
@@ -9548,6 +9619,9 @@ function updatePhoneVerificationSettingsUI() {
     typeof rowPhoneCodeSettingsGroup !== 'undefined' ? rowPhoneCodeSettingsGroup : null,
     typeof rowPhoneVerificationResendCount !== 'undefined' ? rowPhoneVerificationResendCount : null,
     typeof rowPhoneReplacementLimit !== 'undefined' ? rowPhoneReplacementLimit : null,
+    typeof rowPhoneNoSupplyRetryEnabled !== 'undefined' ? rowPhoneNoSupplyRetryEnabled : null,
+    typeof rowPhoneNoSupplyRetryCount !== 'undefined' ? rowPhoneNoSupplyRetryCount : null,
+    typeof rowPhoneNoSupplyRetryDelaySeconds !== 'undefined' ? rowPhoneNoSupplyRetryDelaySeconds : null,
     typeof rowPhoneCodeWaitSeconds !== 'undefined' ? rowPhoneCodeWaitSeconds : null,
     typeof rowPhoneCodeTimeoutWindows !== 'undefined' ? rowPhoneCodeTimeoutWindows : null,
     typeof rowPhoneCodePollIntervalSeconds !== 'undefined' ? rowPhoneCodePollIntervalSeconds : null,
@@ -11554,6 +11628,22 @@ function applySettingsState(state) {
       normalizePhoneVerificationReplacementLimit(
         state?.phoneVerificationReplacementLimit,
         DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT
+      )
+    );
+  }
+  if (typeof inputPhoneNoSupplyRetryEnabled !== 'undefined' && inputPhoneNoSupplyRetryEnabled) {
+    inputPhoneNoSupplyRetryEnabled.checked = Boolean(state?.phoneNoSupplyRetryEnabled);
+  }
+  if (typeof inputPhoneNoSupplyRetryCount !== 'undefined' && inputPhoneNoSupplyRetryCount) {
+    inputPhoneNoSupplyRetryCount.value = String(
+      normalizePhoneNoSupplyRetryCountValue(state?.phoneNoSupplyRetryCount, DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT)
+    );
+  }
+  if (typeof inputPhoneNoSupplyRetryDelaySeconds !== 'undefined' && inputPhoneNoSupplyRetryDelaySeconds) {
+    inputPhoneNoSupplyRetryDelaySeconds.value = String(
+      normalizePhoneNoSupplyRetryDelaySecondsValue(
+        state?.phoneNoSupplyRetryDelaySeconds,
+        DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS
       )
     );
   }
@@ -17173,6 +17263,39 @@ inputPhoneReplacementLimit?.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => { });
 });
 
+inputPhoneNoSupplyRetryEnabled?.addEventListener('change', () => {
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+inputPhoneNoSupplyRetryCount?.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputPhoneNoSupplyRetryCount?.addEventListener('blur', () => {
+  inputPhoneNoSupplyRetryCount.value = String(
+    normalizePhoneNoSupplyRetryCountValue(
+      inputPhoneNoSupplyRetryCount.value,
+      DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT
+    )
+  );
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+inputPhoneNoSupplyRetryDelaySeconds?.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputPhoneNoSupplyRetryDelaySeconds?.addEventListener('blur', () => {
+  inputPhoneNoSupplyRetryDelaySeconds.value = String(
+    normalizePhoneNoSupplyRetryDelaySecondsValue(
+      inputPhoneNoSupplyRetryDelaySeconds.value,
+      DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS
+    )
+  );
+  saveSettings({ silent: true }).catch(() => { });
+});
+
 inputPhoneCodeWaitSeconds?.addEventListener('input', () => {
   markSettingsDirty(true);
   scheduleSettingsAutoSave();
@@ -18029,6 +18152,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           normalizePhoneVerificationReplacementLimit(
             message.payload.phoneVerificationReplacementLimit,
             DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT
+          )
+        );
+      }
+      if (message.payload.phoneNoSupplyRetryEnabled !== undefined && typeof inputPhoneNoSupplyRetryEnabled !== 'undefined' && inputPhoneNoSupplyRetryEnabled) {
+        inputPhoneNoSupplyRetryEnabled.checked = Boolean(message.payload.phoneNoSupplyRetryEnabled);
+      }
+      if (message.payload.phoneNoSupplyRetryCount !== undefined && typeof inputPhoneNoSupplyRetryCount !== 'undefined' && inputPhoneNoSupplyRetryCount) {
+        inputPhoneNoSupplyRetryCount.value = String(
+          normalizePhoneNoSupplyRetryCountValue(
+            message.payload.phoneNoSupplyRetryCount,
+            DEFAULT_PHONE_NO_SUPPLY_RETRY_COUNT
+          )
+        );
+      }
+      if (message.payload.phoneNoSupplyRetryDelaySeconds !== undefined && typeof inputPhoneNoSupplyRetryDelaySeconds !== 'undefined' && inputPhoneNoSupplyRetryDelaySeconds) {
+        inputPhoneNoSupplyRetryDelaySeconds.value = String(
+          normalizePhoneNoSupplyRetryDelaySecondsValue(
+            message.payload.phoneNoSupplyRetryDelaySeconds,
+            DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS
           )
         );
       }

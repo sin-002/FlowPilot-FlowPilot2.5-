@@ -733,6 +733,78 @@ test('fetch-bind-email-code polls only after bind-email submitted', async () => 
   ]);
 });
 
+test('fetch-bind-email-code keeps target email matching and resend plan for 2925', async () => {
+  const calls = {
+    resolveOptions: null,
+    setStates: [],
+  };
+  const realDateNow = Date.now;
+  Date.now = () => 222000;
+
+  const executor = api.createStep8Executor({
+    addLog: async () => {},
+    chrome: {
+      tabs: {
+        update: async () => {},
+      },
+    },
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    confirmCustomVerificationStepBypass: async () => {},
+    ensureMail2925MailboxSession: async () => {},
+    getOAuthFlowRemainingMs: async () => 9000,
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => defaultTimeoutMs,
+    getMailConfig: () => ({
+      provider: '2925',
+      label: '2925 邮箱',
+      source: 'mail-2925',
+      url: 'https://2925.com',
+      navigateOnReuse: false,
+    }),
+    getTabId: async () => 1,
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isTabAlive: async () => true,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    resolveVerificationStep: async (_step, _state, _mail, options) => {
+      calls.resolveOptions = options;
+    },
+    reuseOrCreateTab: async () => 1,
+    sendToContentScriptResilient: async () => ({
+      state: 'verification_page',
+      displayedEmail: '',
+      url: 'https://auth.openai.com/email-verification',
+    }),
+    setState: async (payload) => {
+      calls.setStates.push(payload);
+    },
+    shouldUseCustomRegistrationEmail: () => false,
+    STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,
+    throwIfStopped: () => {},
+  });
+
+  try {
+    await executor.executeFetchBindEmailCode({
+      visibleStep: 10,
+      nodeId: 'fetch-bind-email-code',
+      bindEmailSubmitted: true,
+      email: 'bind.user@example.com',
+      oauthUrl: 'https://oauth.example/latest',
+    });
+  } finally {
+    Date.now = realDateNow;
+  }
+
+  assert.equal(calls.resolveOptions.completionStep, 10);
+  assert.equal(calls.resolveOptions.targetEmail, 'bind.user@example.com');
+  assert.equal(calls.resolveOptions.maxResendRequests, 2);
+  assert.equal(calls.resolveOptions.initialPollMaxAttempts, 5);
+  assert.deepStrictEqual(calls.resolveOptions.pollAttemptPlan, [5, 3, 15]);
+  assert.deepStrictEqual(calls.setStates, [
+    {
+      step8VerificationTargetEmail: 'bind.user@example.com',
+    },
+  ]);
+});
+
 test('fetch-bind-email-code rejects unexpected pages after bind-email submitted', async () => {
   const executor = api.createStep8Executor({
     addLog: async () => {},
@@ -1715,7 +1787,7 @@ test('step 8 completes when polling fails but recovery probe shows oauth consent
   ]);
 });
 
-test('step 8 uses a fixed 10-minute lookback window and plans 2925 polling as 2/3/15', async () => {
+test('step 8 uses a fixed 10-minute lookback window and plans 2925 polling as 5/3/15', async () => {
   let capturedOptions = null;
   let ensureCalls = 0;
   let ensureOptions = null;
@@ -1809,8 +1881,8 @@ test('step 8 uses a fixed 10-minute lookback window and plans 2925 polling as 2/
   assert.equal(capturedOptions.resendIntervalMs, 0);
   assert.equal(capturedOptions.maxResendRequests, 2);
   assert.equal(capturedOptions.initialPollMaxAttempts, 5);
-  assert.deepStrictEqual(capturedOptions.pollAttemptPlan, [2, 3, 15]);
-  assert.equal(capturedOptions.targetEmail, '');
+  assert.deepStrictEqual(capturedOptions.pollAttemptPlan, [5, 3, 15]);
+  assert.equal(capturedOptions.targetEmail, 'user@example.com');
   assert.equal(capturedOptions.beforeSubmit, undefined);
   assert.equal(typeof capturedOptions.getRemainingTimeMs, 'function');
 });

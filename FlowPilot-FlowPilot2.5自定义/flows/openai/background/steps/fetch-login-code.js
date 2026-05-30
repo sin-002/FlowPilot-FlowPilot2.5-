@@ -2,6 +2,8 @@
   root.MultiPageBackgroundStep8 = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundStep8Module() {
   const MAIL_2925_FILTER_LOOKBACK_MS = 10 * 60 * 1000;
+  const MAIL_2925_RESEND_POLL_ATTEMPT_PLAN = [5, 3, 15];
+  const MAIL_2925_RESEND_REQUESTS = 2;
 
   function createStep8Executor(deps = {}) {
     const {
@@ -133,6 +135,12 @@
 
     function normalizeStep8VerificationTargetEmail(value) {
       return String(value || '').trim().toLowerCase();
+    }
+
+    function resolveStep8VerificationTargetEmail(state = {}, displayedEmail = '') {
+      return normalizeStep8VerificationTargetEmail(displayedEmail)
+        || normalizeStep8VerificationTargetEmail(state?.step8VerificationTargetEmail)
+        || normalizeStep8VerificationTargetEmail(state?.email);
     }
 
     function resolveBoundEmailLoginTarget(state = {}, visibleStep = 0) {
@@ -577,21 +585,18 @@
         ? Math.max(0, stepStartedAt - MAIL_2925_FILTER_LOOKBACK_MS)
         : stepStartedAt;
       const verificationSessionKey = `${visibleStep}:${stepStartedAt}`;
-      const shouldCompareVerificationEmail = mail.provider !== '2925';
-      const displayedVerificationEmail = shouldCompareVerificationEmail
-        ? normalizeStep8VerificationTargetEmail(pageState?.displayedEmail)
-        : '';
-      const fixedTargetEmail = shouldCompareVerificationEmail
-        ? (displayedVerificationEmail || normalizeStep8VerificationTargetEmail(preparedState?.step8VerificationTargetEmail || preparedState?.email))
-        : '';
+      const displayedVerificationEmail = normalizeStep8VerificationTargetEmail(pageState?.displayedEmail);
+      const fixedTargetEmail = resolveStep8VerificationTargetEmail(preparedState, displayedVerificationEmail);
 
       await setState({
-        step8VerificationTargetEmail: displayedVerificationEmail || '',
+        step8VerificationTargetEmail: displayedVerificationEmail || (mail.provider === '2925' ? fixedTargetEmail : ''),
       });
 
       await addLog(`步骤 ${visibleStep}：邮箱验证码页面已就绪，开始获取验证码。`, 'info');
-      if (shouldCompareVerificationEmail && displayedVerificationEmail) {
+      if (displayedVerificationEmail) {
         await addLog(`步骤 ${visibleStep}：已固定当前验证码页显示邮箱 ${displayedVerificationEmail} 作为后续匹配目标。`, 'info');
+      } else if (mail.provider === '2925' && fixedTargetEmail) {
+        await addLog(`步骤 ${visibleStep}：2925 将按当前流程邮箱 ${fixedTargetEmail} 校验详情页收件人。`, 'info');
       }
 
       if (shouldUseCustomRegistrationEmail(preparedState)) {
@@ -639,7 +644,7 @@
 
       await resolveVerificationStep(8, {
         ...preparedState,
-        step8VerificationTargetEmail: displayedVerificationEmail || '',
+        step8VerificationTargetEmail: displayedVerificationEmail || (mail.provider === '2925' ? fixedTargetEmail : ''),
       }, mail, {
         completionStep: visibleStep,
         filterAfterTimestamp: verificationFilterAfterTimestamp,
@@ -658,9 +663,9 @@
           }
         },
         targetEmail: fixedTargetEmail,
-        maxResendRequests: mail.provider === '2925' ? 2 : undefined,
+        maxResendRequests: mail.provider === '2925' ? MAIL_2925_RESEND_REQUESTS : undefined,
         initialPollMaxAttempts: mail.provider === '2925' ? 5 : undefined,
-        pollAttemptPlan: mail.provider === '2925' ? [2, 3, 15] : undefined,
+        pollAttemptPlan: mail.provider === '2925' ? MAIL_2925_RESEND_POLL_ATTEMPT_PLAN : undefined,
         resendIntervalMs: mail.provider === LUCKMAIL_PROVIDER
           ? 15000
           : ((mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')

@@ -1656,6 +1656,31 @@
                     <span class="data-unit">次</span>
                   </div>
                 </div>
+                <div id="row-phone-no-supply-retry-enabled" class="hero-sms-settings-cell hero-sms-reuse-cell" style="display:none;">
+                  <span class="hero-sms-settings-caption">无号重试</span>
+                  <div class="setting-controls hero-sms-toggle-controls">
+                    <label class="toggle-switch" for="input-phone-no-supply-retry-enabled" title="所有接码平台候选都拿不到号码时，在同一轮重新获取手机号">
+                      <input type="checkbox" id="input-phone-no-supply-retry-enabled" />
+                      <span class="toggle-switch-track" aria-hidden="true">
+                        <span class="toggle-switch-thumb"></span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                <div id="row-phone-no-supply-retry-count" class="hero-sms-settings-cell" style="display:none;">
+                  <span class="hero-sms-settings-caption">无号次数</span>
+                  <div class="setting-controls">
+                    <input type="number" id="input-phone-no-supply-retry-count" class="data-input auto-delay-input" value="3" min="0" max="20" step="1" title="同一轮内重新获取手机号的最大次数" />
+                    <span class="data-unit">次</span>
+                  </div>
+                </div>
+                <div id="row-phone-no-supply-retry-delay-seconds" class="hero-sms-settings-cell" style="display:none;">
+                  <span class="hero-sms-settings-caption">无号间隔</span>
+                  <div class="setting-controls">
+                    <input type="number" id="input-phone-no-supply-retry-delay-seconds" class="data-input auto-delay-input" value="5" min="0" max="300" step="1" title="同一轮内重新获取手机号前等待的秒数" />
+                    <span class="data-unit">秒</span>
+                  </div>
+                </div>
                 <div id="row-phone-code-wait-seconds" class="hero-sms-settings-cell" style="display:none;">
                   <span class="hero-sms-settings-caption">验证码限时</span>
                   <div class="setting-controls">

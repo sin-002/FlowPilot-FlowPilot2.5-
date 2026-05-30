@@ -54,8 +54,12 @@
     }
 
     function shouldMatchMail2925TargetEmail(state = {}) {
-      return isMail2925Provider(state)
-        && String(state?.mail2925Mode || '').trim().toLowerCase() === 'receive';
+      const targetEmail = String(
+        state?.step8VerificationTargetEmail
+        || state?.email
+        || ''
+      ).trim();
+      return isMail2925Provider(state) && Boolean(targetEmail);
     }
 
     function resolveVerificationNodeId(input) {
