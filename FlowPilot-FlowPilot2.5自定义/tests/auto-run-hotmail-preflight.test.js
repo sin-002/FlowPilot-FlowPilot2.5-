@@ -244,3 +244,170 @@ test('auto-run controller verifies hotmail mailbox before each fresh attempt sta
     /"targetRun":1/
   );
 });
+
+test('auto-run controller clears signup phone identity between fresh rounds', async () => {
+  const runStartStates = [];
+  const logs = [];
+  let currentState = {
+    stepStatuses: {},
+    signupMethod: 'phone',
+    accountIdentifierType: null,
+    accountIdentifier: '',
+    signupPhoneNumber: '',
+    signupPhoneActivation: null,
+    signupPhoneCompletedActivation: null,
+    signupPhoneVerificationRequestedAt: null,
+    signupPhoneVerificationPurpose: '',
+    autoRunSkipFailures: false,
+    autoRunFallbackThreadIntervalMinutes: 0,
+    autoRunRoundSummaries: [],
+  };
+
+  const runtime = {
+    state: {
+      autoRunActive: false,
+      autoRunCurrentRun: 0,
+      autoRunTotalRuns: 2,
+      autoRunAttemptRun: 0,
+      autoRunSessionId: 0,
+    },
+    get() {
+      return { ...this.state };
+    },
+    set(updates = {}) {
+      this.state = { ...this.state, ...updates };
+    },
+  };
+
+  let sessionSeed = 0;
+
+  const controller = api.createAutoRunController({
+    addLog: async (message, level = 'info') => {
+      logs.push({ message, level });
+    },
+    appendAccountRunRecord: async () => null,
+    AUTO_RUN_MAX_RETRIES_PER_ROUND: 3,
+    AUTO_RUN_RETRY_DELAY_MS: 0,
+    AUTO_RUN_TIMER_KIND_BEFORE_RETRY: 'before_retry',
+    AUTO_RUN_TIMER_KIND_BETWEEN_ROUNDS: 'between_rounds',
+    broadcastAutoRunStatus: async () => {},
+    broadcastStopToContentScripts: async () => {},
+    buildFreshAutoRunKeepState: (state = {}) => ({
+      signupMethod: state.signupMethod,
+      accountIdentifierType: state.accountIdentifierType,
+      accountIdentifier: state.accountIdentifier,
+      signupPhoneNumber: state.signupPhoneNumber,
+      signupPhoneActivation: state.signupPhoneActivation,
+      signupPhoneCompletedActivation: state.signupPhoneCompletedActivation,
+      signupPhoneVerificationRequestedAt: state.signupPhoneVerificationRequestedAt,
+      signupPhoneVerificationPurpose: state.signupPhoneVerificationPurpose,
+      autoRunSkipFailures: state.autoRunSkipFailures,
+      autoRunFallbackThreadIntervalMinutes: state.autoRunFallbackThreadIntervalMinutes,
+    }),
+    cancelPendingCommands: () => {},
+    clearStopRequest: () => {},
+    createAutoRunSessionId: () => {
+      sessionSeed += 1;
+      return sessionSeed;
+    },
+    getAutoRunStatusPayload: (phase, payload = {}) => ({
+      autoRunning: ['running', 'waiting_step', 'waiting_email', 'retrying', 'waiting_interval'].includes(phase),
+      autoRunPhase: phase,
+      autoRunCurrentRun: payload.currentRun ?? 0,
+      autoRunTotalRuns: payload.totalRuns ?? 2,
+      autoRunAttemptRun: payload.attemptRun ?? 0,
+      autoRunSessionId: payload.sessionId ?? 0,
+    }),
+    getErrorMessage: (error) => error?.message || String(error || ''),
+    getFirstUnfinishedStep: () => 1,
+    getPendingAutoRunTimerPlan: () => null,
+    getRunningSteps: () => [],
+    getState: async () => ({
+      ...currentState,
+      stepStatuses: { ...(currentState.stepStatuses || {}) },
+    }),
+    getStopRequested: () => false,
+    hasSavedProgress: () => false,
+    isAddPhoneAuthFailure: () => false,
+    isGpcTaskEndedFailure: () => false,
+    isKiroProxyFailure: () => false,
+    isPhoneSmsPlatformRateLimitFailure: () => false,
+    isPlusCheckoutNonFreeTrialFailure: () => false,
+    isRestartCurrentAttemptError: () => false,
+    isSignupUserAlreadyExistsFailure: () => false,
+    isStopError: (error) => (error?.message || String(error || '')) === '流程已被用户停止。',
+    launchAutoRunTimerPlan: async () => false,
+    normalizeAutoRunFallbackThreadIntervalMinutes: () => 0,
+    persistAutoRunTimerPlan: async () => ({}),
+    resetState: async () => {
+      currentState = {};
+    },
+    runAutoSequenceFromStep: async (_step, context = {}) => {
+      runStartStates.push({
+        targetRun: context.targetRun,
+        accountIdentifierType: currentState.accountIdentifierType,
+        accountIdentifier: currentState.accountIdentifier,
+        signupPhoneNumber: currentState.signupPhoneNumber,
+        signupPhoneActivation: currentState.signupPhoneActivation,
+        signupPhoneCompletedActivation: currentState.signupPhoneCompletedActivation,
+        signupPhoneVerificationRequestedAt: currentState.signupPhoneVerificationRequestedAt,
+        signupPhoneVerificationPurpose: currentState.signupPhoneVerificationPurpose,
+      });
+      if (context.targetRun === 1) {
+        currentState = {
+          ...currentState,
+          accountIdentifierType: 'phone',
+          accountIdentifier: '+66950000001',
+          signupPhoneNumber: '+66950000001',
+          signupPhoneActivation: null,
+          signupPhoneCompletedActivation: {
+            activationId: 'round-1',
+            phoneNumber: '+66950000001',
+          },
+          signupPhoneVerificationRequestedAt: 123456,
+          signupPhoneVerificationPurpose: 'login',
+        };
+      }
+    },
+    runtime,
+    setState: async (updates = {}) => {
+      currentState = {
+        ...currentState,
+        ...updates,
+        stepStatuses: updates.stepStatuses ? { ...updates.stepStatuses } : currentState.stepStatuses,
+      };
+    },
+    sleepWithStop: async () => {},
+    throwIfAutoRunSessionStopped: () => {},
+    waitForRunningStepsToFinish: async () => currentState,
+    chrome: {
+      runtime: {
+        sendMessage() {
+          return Promise.resolve();
+        },
+      },
+    },
+  });
+
+  await controller.autoRunLoop(2, {
+    autoRunSkipFailures: false,
+    mode: 'restart',
+  });
+
+  assert.equal(runStartStates.length, 2);
+  assert.equal(runStartStates[1].targetRun, 2);
+  assert.equal(runStartStates[1].accountIdentifierType, null);
+  assert.equal(runStartStates[1].accountIdentifier, '');
+  assert.equal(runStartStates[1].signupPhoneNumber, '');
+  assert.equal(runStartStates[1].signupPhoneActivation, null);
+  assert.equal(runStartStates[1].signupPhoneCompletedActivation, null);
+  assert.equal(runStartStates[1].signupPhoneVerificationRequestedAt, null);
+  assert.equal(runStartStates[1].signupPhoneVerificationPurpose, '');
+  assert.equal(
+    logs.some(({ message, level }) => (
+      level === 'info'
+      && /已清空上一轮注册手机号状态，当前轮将重新获取手机号/.test(message)
+    )),
+    true
+  );
+});

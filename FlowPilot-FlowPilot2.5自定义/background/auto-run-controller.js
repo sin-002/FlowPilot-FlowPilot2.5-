@@ -186,13 +186,13 @@
       if (typeof buildFreshAutoRunKeepState === 'function') {
         const helperPatch = buildFreshAutoRunKeepState(state, context);
         if (helperPatch && typeof helperPatch === 'object' && !Array.isArray(helperPatch)) {
-          return stripRuntimeProgressFromFreshKeepState({
+          return stripRuntimeProgressFromFreshKeepState(clearFreshAttemptSignupPhoneState({
             ...helperPatch,
-          });
+          }));
         }
       }
 
-      return stripRuntimeProgressFromFreshKeepState({
+      return stripRuntimeProgressFromFreshKeepState(clearFreshAttemptSignupPhoneState({
         activeFlowId: state.activeFlowId,
         flowId: state.flowId || state.activeFlowId,
         targetId: state.targetId,
@@ -226,7 +226,37 @@
         cloudflareDomain: state.cloudflareDomain,
         cloudflareDomains: state.cloudflareDomains,
         reusablePhoneActivation: state.reusablePhoneActivation,
-      });
+      }));
+    }
+
+    // 判断 fresh reset 前是否存在需要丢弃的单轮注册手机号状态。
+    function hasFreshAttemptSignupPhoneState(state = {}) {
+      const accountIdentifierType = String(state.accountIdentifierType || '').trim().toLowerCase();
+      return Boolean(
+        String(state.signupPhoneNumber || '').trim()
+        || state.signupPhoneActivation
+        || state.signupPhoneCompletedActivation
+        || state.signupPhoneVerificationRequestedAt
+        || String(state.signupPhoneVerificationPurpose || '').trim()
+        || accountIdentifierType === 'phone'
+      );
+    }
+
+    // 清理单轮注册手机号快照，避免下一轮自动运行复用上一轮身份。
+    function clearFreshAttemptSignupPhoneState(keepState = {}) {
+      const next = {
+        ...keepState,
+        signupPhoneNumber: '',
+        signupPhoneActivation: null,
+        signupPhoneCompletedActivation: null,
+        signupPhoneVerificationRequestedAt: null,
+        signupPhoneVerificationPurpose: '',
+      };
+      if (String(next.accountIdentifierType || '').trim().toLowerCase() === 'phone') {
+        next.accountIdentifierType = null;
+        next.accountIdentifier = '';
+      }
+      return next;
     }
 
     function createAutoRunRoundSummary(round) {
@@ -703,6 +733,9 @@
               sourceLastUrls: {},
               ...getAutoRunStatusPayload('running', { currentRun: targetRun, totalRuns, attemptRun, sessionId }),
             };
+            if (hasFreshAttemptSignupPhoneState(prevState)) {
+              await addLog('已清空上一轮注册手机号状态，当前轮将重新获取手机号。', 'info');
+            }
             await resetState();
             await setState(keepSettings);
             deps.chrome.runtime.sendMessage({ type: 'AUTO_RUN_RESET' }).catch(() => { });
