@@ -83,6 +83,14 @@ test('phone verification helper requests HeroSMS numbers with fixed OpenAI and T
   assert.equal(requests[1].searchParams.get('api_key'), 'demo-key');
 });
 
+test('signup phone resend waits up to 10 seconds for resend button', () => {
+  assert.match(
+    source,
+    /getOAuthFlowStepTimeoutMs\(10000,\s*\{\s*step:\s*visibleStep,\s*actionLabel:\s*'重新发送注册手机验证码'\s*\}\)/s
+  );
+  assert.match(source, /logMessage:\s*'步骤 4：等待注册手机验证码重发按钮出现\.\.\.'/);
+});
+
 test('signup phone helper persists signup runtime state without touching add-phone activation', async () => {
   const setStateCalls = [];
   let currentState = {
@@ -7100,8 +7108,180 @@ test('signup phone verification fails when contact-verification 500 appears afte
     'STEP8_GET_STATE',
     'STEP8_GET_STATE',
     'RESEND_VERIFICATION_CODE',
-    'STEP8_GET_STATE',
   ]);
+  assert.equal(currentState.signupPhoneActivation, null);
+});
+
+test('signup phone verification fails immediately when contact-verification 500 appears right after successful resend', async () => {
+  let resendCalls = 0;
+  let snapshotReads = 0;
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    heroSmsCountryId: 52,
+    heroSmsCountryLabel: 'Thailand',
+    verificationResendCount: 0,
+    phoneCodeWaitSeconds: 15,
+    phoneCodeTimeoutWindows: 2,
+    phoneCodePollIntervalSeconds: 15,
+    phoneCodePollMaxRounds: 1,
+    signupPhoneActivation: {
+      activationId: '930004',
+      phoneNumber: '27781224013',
+      provider: 'hero-sms',
+      countryId: 52,
+      countryLabel: 'Thailand',
+    },
+  };
+
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      const id = parsedUrl.searchParams.get('id');
+      if (action === 'getStatus') {
+        return { ok: true, text: async () => 'STATUS_WAIT_CODE' };
+      }
+      if (action === 'setStatus') {
+        return { ok: true, text: async () => `STATUS_UPDATED:${id}` };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getState: async () => ({ ...currentState }),
+    readAuthTabSnapshot: async () => {
+      snapshotReads += 1;
+      if (resendCalls <= 0) {
+        return {
+          url: 'https://auth.openai.com/phone-verification',
+          title: 'Verify your phone',
+          text: 'Enter the code sent to your phone.',
+        };
+      }
+      return {
+        url: 'https://auth.openai.com/contact-verification',
+        title: "This page isn't working",
+        text: 'auth.openai.com is currently unable to handle this request. HTTP ERROR 500',
+      };
+    },
+    sendToContentScriptResilient: async (_source, message) => {
+      if (message.type === 'STEP8_GET_STATE') {
+        return {
+          phoneVerificationPage: true,
+          url: 'https://auth.openai.com/phone-verification',
+        };
+      }
+      if (message.type === 'RESEND_VERIFICATION_CODE') {
+        resendCalls += 1;
+        return {
+          resent: true,
+          buttonText: '重新发送文本消息',
+        };
+      }
+      throw new Error(`Unexpected content-script message: ${message.type}`);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  await assert.rejects(
+    () => helpers.completeSignupPhoneVerificationFlow(1, { state: currentState }),
+    (error) => {
+      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::/);
+      assert.match(error.message, /HTTP ERROR 500/);
+      return true;
+    }
+  );
+
+  assert.equal(resendCalls, 1);
+  assert.equal(snapshotReads >= 1, true);
+  assert.equal(currentState.signupPhoneActivation, null);
+});
+
+test('signup phone verification treats contact-verification status 500 after resend as server error', async () => {
+  let resendCalls = 0;
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    heroSmsCountryId: 52,
+    heroSmsCountryLabel: 'Thailand',
+    verificationResendCount: 0,
+    phoneCodeWaitSeconds: 15,
+    phoneCodeTimeoutWindows: 2,
+    phoneCodePollIntervalSeconds: 15,
+    phoneCodePollMaxRounds: 1,
+    signupPhoneActivation: {
+      activationId: '930005',
+      phoneNumber: '27781224014',
+      provider: 'hero-sms',
+      countryId: 52,
+      countryLabel: 'Thailand',
+    },
+  };
+
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      const id = parsedUrl.searchParams.get('id');
+      if (action === 'getStatus') {
+        return { ok: true, text: async () => 'STATUS_WAIT_CODE' };
+      }
+      if (action === 'setStatus') {
+        return { ok: true, text: async () => `STATUS_UPDATED:${id}` };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getState: async () => ({ ...currentState }),
+    readAuthTabSnapshot: async () => (
+      resendCalls > 0
+        ? {
+            url: 'https://auth.openai.com/contact-verification',
+            title: 'auth.openai.com',
+            text: '',
+            statusCode: 500,
+          }
+        : {
+            url: 'https://auth.openai.com/phone-verification',
+            title: 'Verify your phone',
+            text: 'Enter the code sent to your phone.',
+          }
+    ),
+    sendToContentScriptResilient: async (_source, message) => {
+      if (message.type === 'STEP8_GET_STATE') {
+        return {
+          phoneVerificationPage: true,
+          url: 'https://auth.openai.com/phone-verification',
+        };
+      }
+      if (message.type === 'RESEND_VERIFICATION_CODE') {
+        resendCalls += 1;
+        return {
+          resent: true,
+          buttonText: '重新发送文本消息',
+        };
+      }
+      throw new Error(`Unexpected content-script message: ${message.type}`);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  await assert.rejects(
+    () => helpers.completeSignupPhoneVerificationFlow(1, { state: currentState }),
+    (error) => {
+      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::/);
+      assert.match(error.message, /HTTP ERROR 500/);
+      return true;
+    }
+  );
+
+  assert.equal(resendCalls, 1);
   assert.equal(currentState.signupPhoneActivation, null);
 });
 

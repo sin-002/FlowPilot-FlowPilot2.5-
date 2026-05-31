@@ -1,7 +1,7 @@
 (function attachBackgroundStep6(root, factory) {
   root.MultiPageBackgroundStep6 = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundStep6Module() {
-  const DEFAULT_REGISTRATION_SUCCESS_WAIT_MS = 20000;
+  const DEFAULT_REGISTRATION_SUCCESS_WAIT_MS = 10000;
   const STEP6_COOKIE_CLEAR_DOMAINS = [
     'chatgpt.com',
     'chat.openai.com',

@@ -101,10 +101,23 @@ async function appendAndBroadcastAccountRunRecord(status, state) {
 }
 ${extractFunction('runCompletedNodeSideEffects')}
 ${extractFunction('reportCompletedNodeSideEffectError')}
-${extractFunction('clearSignupPhoneNumberAfterStep12Success')}
+${extractFunction('clearSignupPhoneRuntimeStateAfterStep12Success')}
 ${extractFunction('completeNodeFromBackground')}
 return { completeNodeFromBackground };
 `)(events, lastNodeId);
+}
+
+function assertSignupPhoneRuntimeStateCleared(events) {
+  assert.ok(events.some((event) => (
+    event.type === 'setState'
+    && event.updates?.signupPhoneNumber === ''
+    && event.updates?.signupPhoneActivation === null
+    && event.updates?.signupPhoneCompletedActivation === null
+    && event.updates?.signupPhoneVerificationRequestedAt === null
+    && event.updates?.signupPhoneVerificationPurpose === ''
+    && event.updates?.accountIdentifierType === null
+    && event.updates?.accountIdentifier === ''
+  )));
 }
 
 test('completeNodeFromBackground releases final node before slow post-completion side effects', async () => {
@@ -136,19 +149,16 @@ test('completeNodeFromBackground keeps non-final node data handling before compl
   assert.equal(types.includes('record'), false);
 });
 
-test('completeNodeFromBackground clears signup phone number after visible step 12 succeeds', async () => {
+test('completeNodeFromBackground clears signup phone runtime state after visible step 12 succeeds', async () => {
   const events = [];
   const api = createApi(events, 'platform-verify');
 
   await api.completeNodeFromBackground('confirm-oauth', { localhostUrl: 'http://localhost:1455/auth/callback?code=ok' });
 
-  assert.ok(events.some((event) => (
-    event.type === 'setState'
-    && event.updates?.signupPhoneNumber === ''
-  )));
+  assertSignupPhoneRuntimeStateCleared(events);
 });
 
-test('completeNodeFromBackground clears signup phone number when platform verify reports visible step 12', async () => {
+test('completeNodeFromBackground clears signup phone runtime state when platform verify reports visible step 12', async () => {
   const events = [];
   const api = createApi(events, 'platform-verify');
 
@@ -158,8 +168,5 @@ test('completeNodeFromBackground clears signup phone number when platform verify
     verifiedStatus: 'SUB2API 已创建账号 #57',
   });
 
-  assert.ok(events.some((event) => (
-    event.type === 'setState'
-    && event.updates?.signupPhoneNumber === ''
-  )));
+  assertSignupPhoneRuntimeStateCleared(events);
 });

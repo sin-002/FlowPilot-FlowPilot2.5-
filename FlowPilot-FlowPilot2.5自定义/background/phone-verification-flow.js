@@ -1711,6 +1711,10 @@
       if (!/\/contact-verification(?:[/?#]|$)/i.test(rawUrl)) {
         return '';
       }
+      const statusCode = Number(snapshot?.statusCode || snapshot?.httpStatusCode || 0);
+      if (statusCode === 500) {
+        return `auth.openai.com/contact-verification 返回 HTTP ERROR 500。`;
+      }
       const bodyText = [
         snapshot?.text,
         snapshot?.bodyText,
@@ -4807,8 +4811,8 @@
     async function resendSignupPhoneVerificationCode(tabId) {
       const visibleStep = 4;
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
-        ? await getOAuthFlowStepTimeoutMs(65000, { step: visibleStep, actionLabel: '重新发送注册手机验证码' })
-        : 65000;
+        ? await getOAuthFlowStepTimeoutMs(10000, { step: visibleStep, actionLabel: '重新发送注册手机验证码' })
+        : 10000;
       const result = await sendToContentScriptResilient('openai-auth', {
         type: 'RESEND_VERIFICATION_CODE',
         step: visibleStep,
@@ -6052,6 +6056,7 @@
                     stepKey: 'fetch-signup-code',
                   });
                 }
+                await throwPhoneResendServerErrorIfAuthTabShowsIt(tabId);
               },
             });
 

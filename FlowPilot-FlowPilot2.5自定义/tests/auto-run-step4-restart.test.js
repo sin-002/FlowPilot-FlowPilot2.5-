@@ -152,6 +152,7 @@ const bundle = [
   extractFunction('isAddPhoneAuthState'),
   extractFunction('isMail2925ThreadTerminatedError'),
   extractFunction('isSignupPhonePasswordMismatchFailure'),
+  extractFunction('isSignupPhoneResendServerError'),
   extractFunction('getSignupPhonePasswordMismatchRestartPayload'),
   extractFunction('restartSignupPhonePasswordMismatchAttemptFromNode'),
   extractFunction('isSignupUserAlreadyExistsFailure'),
@@ -891,6 +892,173 @@ return {
   assert.equal(currentState.accountIdentifier, '');
   assert.equal(currentState.password, 'Secret123!');
   assert.equal(events.logs.some(({ message }) => /丢弃当前注册手机号并回到节点 open-chatgpt 重新开始/.test(message)), true);
+  assert.equal(events.logs.some(({ message }) => /已清空本轮注册手机号与接码订单/.test(message)), true);
+});
+
+test('auto-run clears fetched signup phone state before restarting when step 4 resend lands on contact-verification 500', async () => {
+  const api = new Function(`
+const AUTO_STEP_DELAYS = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
+const LAST_STEP_ID = 10;
+const FINAL_OAUTH_CHAIN_START_STEP = 7;
+const SIGNUP_METHOD_PHONE = 'phone';
+const chrome = {
+  tabs: {
+    update: async () => {},
+  },
+  runtime: {
+    sendMessage: async () => {},
+  },
+};
+
+let remainingFailures = 1;
+let currentState = {
+  email: '',
+  password: 'Secret123!',
+  signupMethod: 'phone',
+  accountIdentifierType: 'phone',
+  accountIdentifier: '+27783149263',
+  signupPhoneNumber: '+27783149263',
+  signupPhoneActivation: { activationId: 'signup-500', phoneNumber: '+27783149263' },
+  signupPhoneCompletedActivation: { activationId: 'signup-500', phoneNumber: '+27783149263' },
+  signupPhoneVerificationRequestedAt: 123456,
+  signupPhoneVerificationPurpose: 'signup',
+  stepStatuses: {
+    1: 'pending',
+    2: 'pending',
+    3: 'pending',
+    4: 'pending',
+    5: 'pending',
+    6: 'pending',
+    7: 'pending',
+    8: 'pending',
+    9: 'pending',
+    10: 'pending',
+  },
+};
+const events = {
+  steps: [],
+  invalidations: [],
+  logs: [],
+  setStateCalls: [],
+};
+
+async function addLog(message, level = 'info') {
+  events.logs.push({ message, level });
+}
+
+async function ensureAutoEmailReady() {
+  return '';
+}
+
+async function broadcastAutoRunStatus() {}
+async function ensureResolvedSignupMethodForRun() { return 'phone'; }
+
+async function getState() {
+  return currentState;
+}
+
+async function setState(updates) {
+  currentState = {
+    ...currentState,
+    ...updates,
+    stepStatuses: updates.stepStatuses ? { ...updates.stepStatuses } : currentState.stepStatuses,
+  };
+  events.setStateCalls.push(updates);
+}
+
+function isStopError(error) {
+  return (error?.message || String(error || '')) === '流程已被用户停止。';
+}
+
+function isStepDoneStatus(status) {
+  return status === 'completed' || status === 'manual_completed' || status === 'skipped';
+}
+
+async function executeStepAndWait(step) {
+  events.steps.push(step);
+  if (step === 4 && remainingFailures > 0) {
+    remainingFailures -= 1;
+    throw new Error('PHONE_RESEND_SERVER_ERROR::This page isn\\'t working auth.openai.com is currently unable to handle this request. HTTP ERROR 500');
+  }
+}
+
+async function getTabId() {
+  return 1;
+}
+
+async function invalidateDownstreamAfterStepRestart(step, options = {}) {
+  events.invalidations.push({ step, options });
+  currentState = {
+    ...currentState,
+    password: null,
+    stepStatuses: {
+      1: currentState.stepStatuses[1] || 'completed',
+      2: 'pending',
+      3: 'pending',
+      4: 'pending',
+      5: 'pending',
+      6: 'pending',
+      7: 'pending',
+      8: 'pending',
+      9: 'pending',
+      10: 'pending',
+    },
+  };
+}
+
+function getLoginAuthStateLabel(state) {
+  return state || 'unknown';
+}
+
+function getErrorMessage(error) {
+  return error?.message || String(error || '');
+}
+
+const phoneVerificationHelpers = {
+  isPhoneResendBannedNumberError() {
+    return false;
+  },
+  isPhoneResendServerError(error) {
+    return /^PHONE_RESEND_SERVER_ERROR::|HTTP ERROR 500|currently unable to handle this request/i.test(String(error?.message || error || ''));
+  },
+};
+
+async function getLoginAuthStateFromContent() {
+  return { state: 'password_page', url: 'https://auth.openai.com/log-in' };
+}
+
+${bundle}
+
+return {
+  async run() {
+    await runAutoSequenceFromStep(1, {
+      targetRun: 1,
+      totalRuns: 1,
+      attemptRuns: 1,
+      continued: false,
+    });
+    return { events, currentState };
+  },
+};
+`)();
+
+  const { events, currentState } = await api.run();
+
+  assert.deepStrictEqual(events.invalidations, [
+    {
+      step: 1,
+      options: {
+        logLabel: '节点 fetch-signup-code 检测到重发短信后进入 contact-verification 500 页面后准备回到 open-chatgpt 重新获取手机号重试（第 1 次重开）',
+      },
+    },
+  ]);
+  assert.equal(currentState.signupPhoneNumber, '');
+  assert.equal(currentState.signupPhoneActivation, null);
+  assert.equal(currentState.signupPhoneCompletedActivation, null);
+  assert.equal(currentState.accountIdentifierType, null);
+  assert.equal(currentState.accountIdentifier, '');
+  assert.equal(currentState.password, 'Secret123!');
+  assert.equal(events.logs.some(({ message }) => /重发短信后进入 contact-verification 500 页面/.test(message)), true);
   assert.equal(events.logs.some(({ message }) => /已清空本轮注册手机号与接码订单/.test(message)), true);
 });
 

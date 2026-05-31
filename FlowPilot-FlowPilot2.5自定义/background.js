@@ -565,6 +565,9 @@ const STOP_ERROR_MESSAGE = '流程已被用户停止。';
 const CLOUDFLARE_SECURITY_BLOCK_ERROR_PREFIX = 'CF_SECURITY_BLOCKED::';
 const CLOUDFLARE_SECURITY_BLOCK_USER_MESSAGE = '您已触发Cloudflare 安全防护系统，已完全停止流程，请不要短时间内多次进行重新发送验证码，连续刷新、反复点击重试会加重风控；请先关闭页面等待 15-30 分钟，让系统的临时限制自动解除。或者更换浏览器';
 const BROWSER_SWITCH_REQUIRED_ERROR_PREFIX = 'BROWSER_SWITCH_REQUIRED::';
+const AUTH_CONTACT_VERIFICATION_URL_FILTER = 'https://auth.openai.com/contact-verification*';
+const AUTH_CONTACT_VERIFICATION_STATUS_TTL_MS = 5 * 60 * 1000;
+const authContactVerificationStatusByTabId = new Map();
 const HUMAN_STEP_DELAY_MIN = 700;
 const HUMAN_STEP_DELAY_MAX = 2200;
 const STEP6_MAX_ATTEMPTS = 3;
@@ -1516,7 +1519,7 @@ const SETTINGS_SCHEMA_VIEW_KEYS = Object.freeze([
 const SETTINGS_SCHEMA_VIEW_KEY_SET = new Set(SETTINGS_SCHEMA_VIEW_KEYS);
 const SETTINGS_EXPORT_SCHEMA_VERSION = 1;
 const SETTINGS_EXPORT_FILENAME_PREFIX = 'multipage-settings';
-const STEP6_REGISTRATION_SUCCESS_WAIT_MS = 20000;
+const STEP6_REGISTRATION_SUCCESS_WAIT_MS = 10000;
 
 const DEFAULT_STATE = {
   flowId: DEFAULT_ACTIVE_FLOW_ID,
@@ -9201,6 +9204,73 @@ function getSourceLabel(source) {
   return labels[source] || source || '未知来源';
 }
 
+function isAuthContactVerificationUrl(url = '') {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === 'auth.openai.com' && parsed.pathname === '/contact-verification';
+  } catch (_err) {
+    return false;
+  }
+}
+
+function pruneAuthContactVerificationStatus() {
+  const now = Date.now();
+  for (const [tabId, record] of authContactVerificationStatusByTabId.entries()) {
+    if (now - Number(record?.capturedAt || 0) > AUTH_CONTACT_VERIFICATION_STATUS_TTL_MS) {
+      authContactVerificationStatusByTabId.delete(tabId);
+    }
+  }
+}
+
+function rememberAuthContactVerificationStatus(details = {}) {
+  if (details.type !== 'main_frame' || !isAuthContactVerificationUrl(details.url)) {
+    return;
+  }
+  authContactVerificationStatusByTabId.set(details.tabId, {
+    url: String(details.url || ''),
+    statusCode: Number(details.statusCode) || 0,
+    error: '',
+    capturedAt: Date.now(),
+  });
+  pruneAuthContactVerificationStatus();
+}
+
+function rememberAuthContactVerificationError(details = {}) {
+  if (details.type !== 'main_frame' || !isAuthContactVerificationUrl(details.url)) {
+    return;
+  }
+  authContactVerificationStatusByTabId.set(details.tabId, {
+    url: String(details.url || ''),
+    statusCode: 0,
+    error: String(details.error || ''),
+    capturedAt: Date.now(),
+  });
+  pruneAuthContactVerificationStatus();
+}
+
+function getAuthContactVerificationStatus(tabId) {
+  pruneAuthContactVerificationStatus();
+  return authContactVerificationStatusByTabId.get(tabId) || null;
+}
+
+function setupAuthContactVerificationStatusCapture() {
+  if (!chrome.webRequest?.onCompleted?.addListener) {
+    return;
+  }
+  chrome.webRequest.onCompleted.addListener(
+    rememberAuthContactVerificationStatus,
+    { urls: [AUTH_CONTACT_VERIFICATION_URL_FILTER], types: ['main_frame'] }
+  );
+  if (chrome.webRequest?.onErrorOccurred?.addListener) {
+    chrome.webRequest.onErrorOccurred.addListener(
+      rememberAuthContactVerificationError,
+      { urls: [AUTH_CONTACT_VERIFICATION_URL_FILTER], types: ['main_frame'] }
+    );
+  }
+}
+
+setupAuthContactVerificationStatusCapture();
+
 // ============================================================
 // Step Status Management
 // ============================================================
@@ -9427,6 +9497,15 @@ function isSignupPhonePasswordMismatchFailure(error) {
   return /SIGNUP_PHONE_PASSWORD_MISMATCH::/i.test(message);
 }
 
+function isSignupPhoneResendServerError(error) {
+  if (typeof phoneVerificationHelpers !== 'undefined'
+    && typeof phoneVerificationHelpers?.isPhoneResendServerError === 'function') {
+    return phoneVerificationHelpers.isPhoneResendServerError(error);
+  }
+  const message = getErrorMessage(error);
+  return /PHONE_RESEND_SERVER_ERROR::|this\s+page\s+isn['’]?t\s+working|currently\s+unable\s+to\s+handle\s+this\s+request|http\s+error\s+500|500\s+internal\s+server\s+error/i.test(message);
+}
+
 function getSignupPhonePasswordMismatchRestartPayload(preservedState = {}) {
   const preservedEmail = String(preservedState.email || '').trim();
   const preservedPassword = String(preservedState.password || '').trim();
@@ -9482,10 +9561,12 @@ async function restartSignupPhonePasswordMismatchAttemptFromNode(nodeId, restart
   const reasonLabel = /PHONE_RESEND_BANNED_NUMBER::|无法向此(?:电话|手机)号码发送短信|无法发送短信到此(?:电话|手机)号码|unable\s+to\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number/i
     .test(errorMessage)
     ? '当前注册手机号无法接收短信'
-    : (/与此(?:电话|手机)号码相关联的帐户已存在|account\s+associated\s+with\s+this\s+phone\s+number\s+already\s+exists/i
+    : (isSignupPhoneResendServerError(error)
+      ? '重发短信后进入 contact-verification 500 页面'
+      : (/与此(?:电话|手机)号码相关联的帐户已存在|account\s+associated\s+with\s+this\s+phone\s+number\s+already\s+exists/i
       .test(errorMessage)
       ? '注册手机号异常'
-      : '手机号/密码不匹配');
+      : '手机号/密码不匹配'));
   const normalizedNodeId = String(nodeId || '').trim() || 'fetch-signup-code';
   await addLog(
     `节点 ${normalizedNodeId}：检测到${reasonLabel}，准备丢弃当前注册手机号并回到节点 open-chatgpt 重新开始（第 ${restartCount} 次重开）。${phoneSuffix}${emailSuffix}原因：${errorMessage}`,
@@ -11006,7 +11087,7 @@ async function reportCompletedNodeSideEffectError(nodeId, error) {
   await addLog(`已完成，但完成后的收尾处理失败：${message}`, 'warn', { nodeId });
 }
 
-async function clearSignupPhoneNumberAfterStep12Success(nodeId, state = {}, payload = {}) {
+async function clearSignupPhoneRuntimeStateAfterStep12Success(nodeId, state = {}, payload = {}) {
   const payloadStep = Math.floor(Number(payload?.visibleStep) || 0);
   const mappedStep = typeof getStepIdByNodeIdForState === 'function'
     ? Number(getStepIdByNodeIdForState(nodeId, state))
@@ -11015,7 +11096,15 @@ async function clearSignupPhoneNumberAfterStep12Success(nodeId, state = {}, payl
   if (visibleStep !== 12) {
     return;
   }
-  await setState({ signupPhoneNumber: '' });
+  await setState({
+    signupPhoneNumber: '',
+    signupPhoneActivation: null,
+    signupPhoneCompletedActivation: null,
+    signupPhoneVerificationRequestedAt: null,
+    signupPhoneVerificationPurpose: '',
+    accountIdentifierType: null,
+    accountIdentifier: '',
+  });
 }
 
 async function completeNodeFromBackground(nodeId, payload = {}) {
@@ -11034,7 +11123,7 @@ async function completeNodeFromBackground(nodeId, payload = {}) {
   const lastNodeId = getLastNodeIdForState(latestState);
   const completionState = normalizedNodeId === lastNodeId ? latestState : null;
   await setNodeStatus(normalizedNodeId, 'completed');
-  await clearSignupPhoneNumberAfterStep12Success(normalizedNodeId, latestState, payload);
+  await clearSignupPhoneRuntimeStateAfterStep12Success(normalizedNodeId, latestState, payload);
   await addLog('已完成', 'ok', { nodeId: normalizedNodeId });
 
   if (normalizedNodeId === lastNodeId) {
@@ -13253,7 +13342,8 @@ async function runAutoSequenceFromNodeGraph(startNodeId, context = {}) {
         const isPhoneResendBanned = typeof phoneVerificationHelpers !== 'undefined'
           && typeof phoneVerificationHelpers?.isPhoneResendBannedNumberError === 'function'
           && phoneVerificationHelpers.isPhoneResendBannedNumberError(err);
-        if (isSignupPhonePasswordMismatchFailure(err) || isPhoneResendBanned) {
+        const isPhoneResendServer = isSignupPhoneResendServerError(err);
+        if (isSignupPhonePasswordMismatchFailure(err) || isPhoneResendBanned || isPhoneResendServer) {
           await restartSignupPhonePasswordMismatchAttemptFromNode('fetch-signup-code', step4RestartCount, err);
         } else {
           const preservedState = await getState();
@@ -15517,10 +15607,13 @@ async function readAuthTabSnapshot(tabId) {
   let tabSnapshot = null;
   try {
     const tab = await chrome.tabs.get(tabId);
+    const contactVerificationStatus = getAuthContactVerificationStatus(tabId);
     tabSnapshot = {
       url: String(tab?.url || ''),
       title: String(tab?.title || ''),
       text: '',
+      statusCode: Number(contactVerificationStatus?.statusCode || 0),
+      networkError: String(contactVerificationStatus?.error || ''),
     };
   } catch {
     tabSnapshot = null;
