@@ -11006,6 +11006,18 @@ async function reportCompletedNodeSideEffectError(nodeId, error) {
   await addLog(`已完成，但完成后的收尾处理失败：${message}`, 'warn', { nodeId });
 }
 
+async function clearSignupPhoneNumberAfterStep12Success(nodeId, state = {}, payload = {}) {
+  const payloadStep = Math.floor(Number(payload?.visibleStep) || 0);
+  const mappedStep = typeof getStepIdByNodeIdForState === 'function'
+    ? Number(getStepIdByNodeIdForState(nodeId, state))
+    : 0;
+  const visibleStep = payloadStep > 0 ? payloadStep : mappedStep;
+  if (visibleStep !== 12) {
+    return;
+  }
+  await setState({ signupPhoneNumber: '' });
+}
+
 async function completeNodeFromBackground(nodeId, payload = {}) {
   const normalizedNodeId = String(nodeId || '').trim();
   if (!normalizedNodeId) {
@@ -11022,6 +11034,7 @@ async function completeNodeFromBackground(nodeId, payload = {}) {
   const lastNodeId = getLastNodeIdForState(latestState);
   const completionState = normalizedNodeId === lastNodeId ? latestState : null;
   await setNodeStatus(normalizedNodeId, 'completed');
+  await clearSignupPhoneNumberAfterStep12Success(normalizedNodeId, latestState, payload);
   await addLog('已完成', 'ok', { nodeId: normalizedNodeId });
 
   if (normalizedNodeId === lastNodeId) {

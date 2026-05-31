@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auth 500 页面检测</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="panel">
+    <header class="header">
+      <div>
+        <h1>Auth 500 页面检测</h1>
+        <p id="page-url" class="muted">正在读取当前页面...</p>
+      </div>
+      <div class="actions">
+        <button id="scan-button" type="button">重新检测</button>
+        <button id="reload-button" type="button" class="secondary">刷新并捕获状态码</button>
+      </div>
+    </header>
+
+    <section id="result-card" class="result-card">
+      <span class="label">检测结果</span>
+      <div id="result-title" class="result-title">--</div>
+      <div id="result-detail" class="result-detail">等待检测</div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">页面信息</div>
+      <pre id="page-info" class="preview">暂无</pre>
+    </section>
+
+    <footer id="status" class="status">打开 auth.openai.com/contact-verification 后点击扩展。</footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

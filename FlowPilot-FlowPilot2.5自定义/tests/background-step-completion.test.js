@@ -63,8 +63,18 @@ async function getState() {
   events.push({ type: 'getState' });
   return { nodeStatuses: {}, accountContributionEnabled: true };
 }
+function getStepIdByNodeIdForState(nodeId) {
+  const map = {
+    'confirm-oauth': 12,
+    'platform-verify': 13,
+  };
+  return map[String(nodeId || '').trim()] || null;
+}
 function getLastNodeIdForState() {
   return lastNodeId;
+}
+async function setState(updates) {
+  events.push({ type: 'setState', updates });
 }
 async function setNodeStatus(nodeId, status) {
   events.push({ type: 'status', nodeId, status });
@@ -91,6 +101,7 @@ async function appendAndBroadcastAccountRunRecord(status, state) {
 }
 ${extractFunction('runCompletedNodeSideEffects')}
 ${extractFunction('reportCompletedNodeSideEffectError')}
+${extractFunction('clearSignupPhoneNumberAfterStep12Success')}
 ${extractFunction('completeNodeFromBackground')}
 return { completeNodeFromBackground };
 `)(events, lastNodeId);
@@ -123,4 +134,32 @@ test('completeNodeFromBackground keeps non-final node data handling before compl
   const types = events.map((event) => event.type);
   assert.equal(types.indexOf('handle-done') < types.indexOf('notify'), true);
   assert.equal(types.includes('record'), false);
+});
+
+test('completeNodeFromBackground clears signup phone number after visible step 12 succeeds', async () => {
+  const events = [];
+  const api = createApi(events, 'platform-verify');
+
+  await api.completeNodeFromBackground('confirm-oauth', { localhostUrl: 'http://localhost:1455/auth/callback?code=ok' });
+
+  assert.ok(events.some((event) => (
+    event.type === 'setState'
+    && event.updates?.signupPhoneNumber === ''
+  )));
+});
+
+test('completeNodeFromBackground clears signup phone number when platform verify reports visible step 12', async () => {
+  const events = [];
+  const api = createApi(events, 'platform-verify');
+
+  await api.completeNodeFromBackground('platform-verify', {
+    localhostUrl: 'http://localhost:1455/auth/callback?code=ok',
+    visibleStep: 12,
+    verifiedStatus: 'SUB2API 已创建账号 #57',
+  });
+
+  assert.ok(events.some((event) => (
+    event.type === 'setState'
+    && event.updates?.signupPhoneNumber === ''
+  )));
 });

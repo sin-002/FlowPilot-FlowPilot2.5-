@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Auth 500 页面检测",
+  "version": "1.0.0",
+  "description": "检测当前 auth.openai.com/contact-verification 页面是否显示 HTTP ERROR 500",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "https://auth.openai.com/*"
+  ],
+  "action": {
+    "default_title": "检测 Auth 500",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
