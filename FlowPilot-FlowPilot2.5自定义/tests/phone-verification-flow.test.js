@@ -6792,7 +6792,7 @@ test('phone verification helper stops when add-phone recovery cannot be verified
   }
 });
 
-test('signup phone verification cancels activation when resend lands on contact-verification HTTP 500 page', async () => {
+test('signup phone verification cancels activation without resend after HTTP 500 resend path is disabled', async () => {
   const requests = [];
   let currentState = {
     heroSmsApiKey: 'demo-key',
@@ -6846,8 +6846,8 @@ test('signup phone verification cancels activation when resend lands on contact-
   await assert.rejects(
     () => helpers.completeSignupPhoneVerificationFlow(1, { state: currentState }),
     (error) => {
-      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::This page isn't working/);
-      assert.equal(error.message.includes('PHONE_RESEND_SERVER_ERROR::PHONE_RESEND_SERVER_ERROR::'), false);
+      assert.match(error.message, /等待手机验证码超时/);
+      assert.equal(error.message.includes('PHONE_RESEND_SERVER_ERROR::'), false);
       return true;
     }
   );
@@ -6855,7 +6855,7 @@ test('signup phone verification cancels activation when resend lands on contact-
   assert.equal(currentState.signupPhoneActivation, null);
 });
 
-test('signup phone verification cancels activation when resend lands on contact-verification 500 page but content script drops', async () => {
+test('signup phone verification cancels activation without resend when content script would drop', async () => {
   const requests = [];
   const tabSnapshots = [];
   let resendAttempted = false;
@@ -6931,12 +6931,13 @@ test('signup phone verification cancels activation when resend lands on contact-
   await assert.rejects(
     () => helpers.completeSignupPhoneVerificationFlow(1, { state: currentState }),
     (error) => {
-      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::This page isn't working/);
+      assert.match(error.message, /等待手机验证码超时/);
       return true;
     }
   );
 
   assert.equal(tabSnapshots.length >= 1, true);
+  assert.equal(resendAttempted, false);
   assert.equal(currentState.signupPhoneActivation, null);
   assert.equal(requests.filter((request) => request.searchParams.get('action') === 'getStatus').length, 1);
 });
@@ -7021,7 +7022,7 @@ test('signup phone verification does not treat contact-verification URL-only sna
   assert.equal(currentState.signupPhoneActivation, null);
 });
 
-test('signup phone verification fails when contact-verification 500 appears after successful resend', async () => {
+test('signup phone verification does not click resend before failing SMS timeout', async () => {
   const messages = [];
   let pageStateReads = 0;
   let resendCalls = 0;
@@ -7096,23 +7097,96 @@ test('signup phone verification fails when contact-verification 500 appears afte
   await assert.rejects(
     () => helpers.completeSignupPhoneVerificationFlow(1, { state: currentState }),
     (error) => {
-      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::/);
-      assert.match(error.message, /HTTP ERROR 500/);
-      assert.match(error.message, /This page isn't working/);
+      assert.match(error.message, /等待手机验证码超时/);
+      assert.doesNotMatch(error.message, /^PHONE_RESEND_SERVER_ERROR::/);
       return true;
     }
   );
 
-  assert.equal(resendCalls, 1);
+  assert.equal(resendCalls, 0);
   assert.deepStrictEqual(messages, [
     'STEP8_GET_STATE',
     'STEP8_GET_STATE',
-    'RESEND_VERIFICATION_CODE',
   ]);
   assert.equal(currentState.signupPhoneActivation, null);
 });
 
-test('signup phone verification fails immediately when contact-verification 500 appears right after successful resend', async () => {
+test('signup phone verification cancels activation and skips resend after first SMS timeout window', async () => {
+  const contentMessages = [];
+  const statusActions = [];
+  let fakeNow = 0;
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    heroSmsCountryId: 52,
+    heroSmsCountryLabel: 'Thailand',
+    verificationResendCount: 0,
+    phoneCodeWaitSeconds: 120,
+    phoneCodeTimeoutWindows: 2,
+    phoneCodePollIntervalSeconds: 5,
+    phoneCodePollMaxRounds: 4,
+    signupPhoneActivation: {
+      activationId: 'signup-timeout-no-resend',
+      phoneNumber: '56955625781',
+      provider: 'hero-sms',
+      countryId: 52,
+      countryLabel: 'Thailand',
+    },
+  };
+  const realDateNow = Date.now;
+  Date.now = () => fakeNow;
+  try {
+    const helpers = api.createPhoneVerificationHelpers({
+      addLog: async () => {},
+      ensureStep8SignupPageReady: async () => {},
+      fetchImpl: async (url) => {
+        const parsedUrl = new URL(url);
+        const action = parsedUrl.searchParams.get('action');
+        if (action === 'getStatus') {
+          return { ok: true, text: async () => 'STATUS_WAIT_CODE' };
+        }
+        if (action === 'setStatus') {
+          statusActions.push(parsedUrl.searchParams.get('status'));
+          return { ok: true, text: async () => 'STATUS_CANCEL' };
+        }
+        throw new Error(`Unexpected HeroSMS action: ${action}`);
+      },
+      getState: async () => ({ ...currentState }),
+      sendToContentScriptResilient: async (_source, message) => {
+        contentMessages.push(message.type);
+        if (message.type === 'STEP8_GET_STATE') {
+          return {
+            phoneVerificationPage: true,
+            url: 'https://auth.openai.com/phone-verification',
+          };
+        }
+        if (message.type === 'RESEND_VERIFICATION_CODE') {
+          throw new Error('signup timeout should not click resend');
+        }
+        throw new Error(`Unexpected content-script message: ${message.type}`);
+      },
+      setState: async (updates) => {
+        currentState = { ...currentState, ...updates };
+      },
+      sleepWithStop: async (ms) => {
+        fakeNow += ms;
+      },
+      throwIfStopped: () => {},
+    });
+
+    await assert.rejects(
+      () => helpers.completeSignupPhoneVerificationFlow(1, { state: currentState }),
+      /等待手机验证码超时/
+    );
+  } finally {
+    Date.now = realDateNow;
+  }
+
+  assert.equal(contentMessages.includes('RESEND_VERIFICATION_CODE'), false);
+  assert.deepStrictEqual(statusActions, ['8']);
+  assert.equal(currentState.signupPhoneActivation, null);
+});
+
+test('signup phone verification skips contact-verification probe when resend is disabled', async () => {
   let resendCalls = 0;
   let snapshotReads = 0;
   let currentState = {
@@ -7189,18 +7263,18 @@ test('signup phone verification fails immediately when contact-verification 500 
   await assert.rejects(
     () => helpers.completeSignupPhoneVerificationFlow(1, { state: currentState }),
     (error) => {
-      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::/);
-      assert.match(error.message, /HTTP ERROR 500/);
+      assert.match(error.message, /等待手机验证码超时/);
+      assert.doesNotMatch(error.message, /^PHONE_RESEND_SERVER_ERROR::/);
       return true;
     }
   );
 
-  assert.equal(resendCalls, 1);
+  assert.equal(resendCalls, 0);
   assert.equal(snapshotReads >= 1, true);
   assert.equal(currentState.signupPhoneActivation, null);
 });
 
-test('signup phone verification treats contact-verification status 500 after resend as server error', async () => {
+test('signup phone verification ignores post-resend status 500 path when resend is disabled', async () => {
   let resendCalls = 0;
   let currentState = {
     heroSmsApiKey: 'demo-key',
@@ -7275,13 +7349,13 @@ test('signup phone verification treats contact-verification status 500 after res
   await assert.rejects(
     () => helpers.completeSignupPhoneVerificationFlow(1, { state: currentState }),
     (error) => {
-      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::/);
-      assert.match(error.message, /HTTP ERROR 500/);
+      assert.match(error.message, /等待手机验证码超时/);
+      assert.doesNotMatch(error.message, /^PHONE_RESEND_SERVER_ERROR::/);
       return true;
     }
   );
 
-  assert.equal(resendCalls, 1);
+  assert.equal(resendCalls, 0);
   assert.equal(currentState.signupPhoneActivation, null);
 });
 

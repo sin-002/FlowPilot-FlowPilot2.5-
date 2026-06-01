@@ -33,7 +33,7 @@
       HERO_SMS_COUNTRY_LABEL = 'Thailand',
       HERO_SMS_SERVICE_CODE = 'dr',
       HERO_SMS_SERVICE_LABEL = 'OpenAI',
-      DEFAULT_PHONE_CODE_WAIT_SECONDS = 60,
+      DEFAULT_PHONE_CODE_WAIT_SECONDS = 120,
       DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS = 2,
       DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS = 5,
       DEFAULT_PHONE_CODE_POLL_ROUNDS = 4,
@@ -5919,7 +5919,7 @@
               throw error;
             }
 
-            if (windowIndex < timeoutWindows) {
+            if (options.resendOnTimeoutWindow !== false && windowIndex < timeoutWindows) {
               await addLog(
                 `步骤 ${visibleStep}：${normalizedActivation.phoneNumber} 在 ${waitSeconds} 秒内未收到短信，准备请求重发。`,
                 'warn',
@@ -5953,6 +5953,7 @@
         purpose: 'signup',
         actionLabelPrefix: 'signup phone verification',
         missingActivationMessage: '步骤 4：注册手机号激活记录缺失，请重新执行步骤 2。',
+        resendOnTimeoutWindow: false,
       });
     }
 

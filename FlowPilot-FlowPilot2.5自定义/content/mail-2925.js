@@ -3,6 +3,7 @@
 
 const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
 const isTopFrame = window === window.top;
+const MAIL2925_DETAIL_RENDER_WAIT_MS = 5000;
 
 console.log(MAIL2925_PREFIX, 'Content script loaded on', location.href, 'frame:', isTopFrame ? 'top' : 'child');
 
@@ -1163,7 +1164,7 @@ async function deleteCurrentMailboxEmail(step) {
 async function openMailAndDeleteAfterRead(item, step) {
   simulateClick(item);
   try {
-    await sleepRandom(1200, 2200);
+    await sleep(MAIL2925_DETAIL_RENDER_WAIT_MS);
     return document.body?.textContent || '';
   } finally {
     await deleteCurrentMailboxEmail(step);

@@ -12,6 +12,14 @@ test('ensureMail2925Session waits 1 second after filling credentials before clic
   assert.match(source, /fillInput\(passwordInput,\s*password\);[\s\S]*?await sleep\(200\);[\s\S]*?await sleep\(1000\);[\s\S]*?simulateClick\(loginButton\);/);
 });
 
+test('openMailAndDeleteAfterRead buffers detail render before deleting mail', () => {
+  assert.match(source, /const MAIL2925_DETAIL_RENDER_WAIT_MS = 5000;/);
+  assert.match(
+    source,
+    /await sleep\(MAIL2925_DETAIL_RENDER_WAIT_MS\);[\s\S]*?return document\.body\?\.textContent \|\| '';/,
+  );
+});
+
 test('detectMail2925ViewState treats top mailbox email as mailbox view', () => {
   const bundle = [
     extractFunction('normalizeNodeText'),
@@ -1208,6 +1216,7 @@ async function waitForMailboxReady() {
 }
 const console = { warn() {} };
 const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
+const MAIL2925_DETAIL_RENDER_WAIT_MS = 5000;
 
 ${bundle}
 
