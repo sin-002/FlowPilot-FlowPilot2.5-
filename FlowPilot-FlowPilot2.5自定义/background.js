@@ -664,7 +664,8 @@ const PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS_MAX = 300;
 const DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS = 5;
 const PHONE_CODE_WAIT_SECONDS_MIN = 15;
 const PHONE_CODE_WAIT_SECONDS_MAX = 300;
-const DEFAULT_PHONE_CODE_WAIT_SECONDS = 120;
+const LEGACY_DEFAULT_PHONE_CODE_WAIT_SECONDS = 120;
+const DEFAULT_PHONE_CODE_WAIT_SECONDS = 60;
 const PHONE_CODE_TIMEOUT_WINDOWS_MIN = 1;
 const PHONE_CODE_TIMEOUT_WINDOWS_MAX = 10;
 const DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS = 2;
@@ -3425,6 +3426,9 @@ function normalizePersistentSettingValue(key, value) {
     case 'phoneNoSupplyRetryDelaySeconds':
       return normalizePhoneNoSupplyRetryDelaySeconds(value, DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS);
     case 'phoneCodeWaitSeconds':
+      if (Math.floor(Number(value)) === LEGACY_DEFAULT_PHONE_CODE_WAIT_SECONDS) {
+        return DEFAULT_PHONE_CODE_WAIT_SECONDS;
+      }
       return normalizePhoneCodeWaitSeconds(value, DEFAULT_PHONE_CODE_WAIT_SECONDS);
     case 'phoneCodeTimeoutWindows':
       return normalizePhoneCodeTimeoutWindows(value, DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS);

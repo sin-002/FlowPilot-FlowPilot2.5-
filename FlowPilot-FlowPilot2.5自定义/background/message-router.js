@@ -237,6 +237,22 @@
       return updates;
     }
 
+    function buildSignupPhoneRuntimeClearUpdates(state = {}) {
+      const accountIdentifierType = String(state?.accountIdentifierType || '').trim().toLowerCase();
+      const updates = {
+        signupPhoneNumber: '',
+        signupPhoneActivation: null,
+        signupPhoneCompletedActivation: null,
+        signupPhoneVerificationRequestedAt: null,
+        signupPhoneVerificationPurpose: '',
+      };
+      if (accountIdentifierType === 'phone') {
+        updates.accountIdentifierType = null;
+        updates.accountIdentifier = '';
+      }
+      return updates;
+    }
+
     function preserveKeyFromState(updates, currentState, key) {
       if (!Object.prototype.hasOwnProperty.call(updates, key)) {
         return;
@@ -1326,6 +1342,9 @@
           const totalRuns = normalizeRunCount(message.payload?.totalRuns || 1);
           const autoRunSkipFailures = Boolean(message.payload?.autoRunSkipFailures);
           const mode = message.payload?.mode === 'continue' ? 'continue' : 'restart';
+          if (typeof setState === 'function') {
+            await setState(buildSignupPhoneRuntimeClearUpdates(state));
+          }
           await setState({ autoRunSkipFailures });
           startAutoRunLoop(totalRuns, { autoRunSkipFailures, mode });
           return { ok: true };

@@ -33,7 +33,7 @@
       HERO_SMS_COUNTRY_LABEL = 'Thailand',
       HERO_SMS_SERVICE_CODE = 'dr',
       HERO_SMS_SERVICE_LABEL = 'OpenAI',
-      DEFAULT_PHONE_CODE_WAIT_SECONDS = 120,
+      DEFAULT_PHONE_CODE_WAIT_SECONDS = 60,
       DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS = 2,
       DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS = 5,
       DEFAULT_PHONE_CODE_POLL_ROUNDS = 4,
@@ -4040,13 +4040,15 @@
       await setPhoneActivationStatus(state, activation, 6, 'HeroSMS setStatus(6)');
     }
 
-    async function cancelPhoneActivation(state = {}, activation) {
+    async function cancelPhoneActivation(state = {}, activation, options = {}) {
+      const normalizedActivation = normalizeActivation(activation);
+      const visibleStep = normalizeLogStep(options?.step) || getActivePhoneVerificationVisibleStep(9);
+      const stepKey = String(options?.stepKey || (visibleStep === 4 ? 'fetch-signup-code' : 'fetch-login-code')).trim();
+      const orderIdentifier = normalizedActivation?.phoneNumber || normalizedActivation?.activationId || 'current activation';
       try {
-        const normalizedActivation = normalizeActivation(activation);
         if (shouldSkipTerminalStatusForFreeReuse(state, activation)) {
-          const identifier = normalizedActivation?.phoneNumber || normalizedActivation?.activationId || 'current activation';
           await addLog(
-            `步骤 9：白嫖复用模式仅请求短信，跳过 ${identifier} 的接码取消状态。`,
+            `步骤 ${visibleStep}：白嫖复用模式仅请求短信，跳过 ${orderIdentifier} 的接码取消状态。`,
             'info'
           );
           return;
@@ -4054,13 +4056,27 @@
         if (getActivationProviderId(activation, state) === PHONE_SMS_PROVIDER_FIVE_SIM) {
           const provider = getFiveSimProviderForState(state);
           if (provider) {
-            await provider.cancelActivation(state, activation);
+            const cancelResponse = await provider.cancelActivation(state, activation);
+            await addLog(
+              `步骤 ${visibleStep}：已取消接码订单 ${orderIdentifier}，响应：${String(cancelResponse || 'empty').trim() || 'empty'}。`,
+              'info',
+              { step: visibleStep, stepKey }
+            );
             return;
           }
         }
-        await setPhoneActivationStatus(state, activation, 8, 'HeroSMS setStatus(8)');
-      } catch (_) {
-        // Best-effort cleanup.
+        const cancelResponse = await setPhoneActivationStatus(state, activation, 8, 'HeroSMS setStatus(8)');
+        await addLog(
+          `步骤 ${visibleStep}：已取消接码订单 ${orderIdentifier}，响应：${String(cancelResponse || 'empty').trim() || 'empty'}。`,
+          'info',
+          { step: visibleStep, stepKey }
+        );
+      } catch (error) {
+        await addLog(
+          `步骤 ${visibleStep}：取消接码订单 ${orderIdentifier} 失败：${error.message || error}`,
+          'warn',
+          { step: visibleStep, stepKey }
+        );
       }
     }
 
@@ -5989,7 +6005,10 @@
     async function cancelSignupPhoneActivation(state = {}, activation = null) {
       const normalizedActivation = normalizeActivation(activation || state?.signupPhoneActivation);
       if (normalizedActivation) {
-        await cancelPhoneActivation(state, normalizedActivation);
+        await cancelPhoneActivation(state, normalizedActivation, {
+          step: 4,
+          stepKey: 'fetch-signup-code',
+        });
       }
       await clearSignupPhoneRuntimeState();
     }
