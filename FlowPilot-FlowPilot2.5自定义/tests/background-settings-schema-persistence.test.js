@@ -93,6 +93,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   activeFlowId: DEFAULT_ACTIVE_FLOW_ID,
   targetId: 'cpa',
   signupMethod: 'email',
+  signupPhoneCodeTimeoutStrategy: 'restart',
   plusModeEnabled: false,
   plusPaymentMethod: 'paypal',
   plusAccountAccessStrategy: 'oauth',
@@ -122,6 +123,9 @@ function normalizePanelMode(value = '') {
 }
 function normalizeSignupMethod(value = '') {
   return String(value || '').trim().toLowerCase() === 'phone' ? 'phone' : 'email';
+}
+function normalizeSignupPhoneCodeTimeoutStrategy(value = '') {
+  return String(value || '').trim().toLowerCase() === 'resend' ? 'resend' : 'restart';
 }
 function normalizePlusPaymentMethod(value = '') {
   const normalized = String(value || '').trim().toLowerCase();
@@ -253,6 +257,7 @@ test('buildPersistentSettingsPayload accepts schema-only input when requireKnown
             signupMethod: 'email',
             phoneVerificationEnabled: false,
             phoneSignupReloginAfterBindEmailEnabled: false,
+            signupPhoneCodeTimeoutStrategy: 'resend',
           },
           plus: {
             plusModeEnabled: false,
@@ -286,6 +291,7 @@ test('buildPersistentSettingsPayload accepts schema-only input when requireKnown
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'kiroRegion'), false);
   assert.equal(payload.settingsSchemaVersion, 5);
   assert.equal(payload.settingsState.flows.openai.plus.plusAccountAccessStrategy, 'oauth');
+  assert.equal(payload.signupPhoneCodeTimeoutStrategy, 'resend');
 });
 
 test('getPersistedSettings reads schema keys alongside legacy flat settings keys', async () => {
@@ -686,4 +692,18 @@ function getRemovedKeys() {
   assert.equal(Object.prototype.hasOwnProperty.call(write, 'mailProvider'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(write, 'panelMode'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(write, 'ipProxyMode'), false);
+});
+
+test('buildPersistentSettingsPayload normalizes signup phone timeout strategy', () => {
+  const api = buildHarness();
+
+  const resendPayload = api.buildPersistentSettingsPayload({
+    signupPhoneCodeTimeoutStrategy: 'resend',
+  }, { fillDefaults: true });
+  const restartPayload = api.buildPersistentSettingsPayload({
+    signupPhoneCodeTimeoutStrategy: 'invalid',
+  }, { fillDefaults: true });
+
+  assert.equal(resendPayload.signupPhoneCodeTimeoutStrategy, 'resend');
+  assert.equal(restartPayload.signupPhoneCodeTimeoutStrategy, 'restart');
 });

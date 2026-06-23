@@ -212,6 +212,7 @@
         phoneNoSupplyRetryEnabled: state.phoneNoSupplyRetryEnabled,
         phoneNoSupplyRetryCount: state.phoneNoSupplyRetryCount,
         phoneNoSupplyRetryDelaySeconds: state.phoneNoSupplyRetryDelaySeconds,
+        signupPhoneCodeTimeoutStrategy: state.signupPhoneCodeTimeoutStrategy,
         autoStepDelaySeconds: state.autoStepDelaySeconds,
         stepExecutionRangeByFlow: state.stepExecutionRangeByFlow,
         signupMethod: state.signupMethod,

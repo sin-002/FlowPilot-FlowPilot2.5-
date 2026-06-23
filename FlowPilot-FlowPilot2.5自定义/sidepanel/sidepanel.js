@@ -477,6 +477,7 @@ const rowPhoneNoSupplyRetryCount = document.getElementById('row-phone-no-supply-
 const rowPhoneNoSupplyRetryDelaySeconds = document.getElementById('row-phone-no-supply-retry-delay-seconds');
 const rowPhoneCodeWaitSeconds = document.getElementById('row-phone-code-wait-seconds');
 const rowPhoneCodeTimeoutWindows = document.getElementById('row-phone-code-timeout-windows');
+const rowSignupPhoneCodeTimeoutStrategy = document.getElementById('row-signup-phone-code-timeout-strategy');
 const rowPhoneCodePollIntervalSeconds = document.getElementById('row-phone-code-poll-interval-seconds');
 const rowPhoneCodePollMaxRounds = document.getElementById('row-phone-code-poll-max-rounds');
 const rowFreePhoneReuseEnabled = document.getElementById('row-free-phone-reuse-enabled');
@@ -500,6 +501,7 @@ const inputPhoneNoSupplyRetryCount = document.getElementById('input-phone-no-sup
 const inputPhoneNoSupplyRetryDelaySeconds = document.getElementById('input-phone-no-supply-retry-delay-seconds');
 const inputPhoneCodeWaitSeconds = document.getElementById('input-phone-code-wait-seconds');
 const inputPhoneCodeTimeoutWindows = document.getElementById('input-phone-code-timeout-windows');
+const signupPhoneCodeTimeoutStrategyButtons = Array.from(document.querySelectorAll('[data-signup-phone-code-timeout-strategy]'));
 const inputPhoneCodePollIntervalSeconds = document.getElementById('input-phone-code-poll-interval-seconds');
 const inputPhoneCodePollMaxRounds = document.getElementById('input-phone-code-poll-max-rounds');
 const inputHeroSmsReuseEnabled = document.getElementById('input-hero-sms-reuse-enabled');
@@ -666,6 +668,9 @@ const DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS = 5;
 const PHONE_CODE_POLL_MAX_ROUNDS_MIN = 1;
 const PHONE_CODE_POLL_MAX_ROUNDS_MAX = 120;
 const DEFAULT_PHONE_CODE_POLL_MAX_ROUNDS = 4;
+const SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESTART = 'restart';
+const SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESEND = 'resend';
+const DEFAULT_SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY = SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESTART;
 const PHONE_SMS_PROVIDER_HERO = 'hero-sms';
 const PHONE_SMS_PROVIDER_FIVE_SIM = '5sim';
 const PHONE_SMS_PROVIDER_HERO_SMS = PHONE_SMS_PROVIDER_HERO;
@@ -4762,6 +4767,9 @@ function collectSettingsPayload() {
       latestState?.phoneCodeTimeoutWindows
     )
     : defaultPhoneCodeTimeoutWindows;
+  const signupPhoneCodeTimeoutStrategyValue = typeof getSelectedSignupPhoneCodeTimeoutStrategy === 'function'
+    ? getSelectedSignupPhoneCodeTimeoutStrategy()
+    : normalizeSignupPhoneCodeTimeoutStrategy(latestState?.signupPhoneCodeTimeoutStrategy);
   const phoneCodePollIntervalSecondsValue = typeof inputPhoneCodePollIntervalSeconds !== 'undefined' && inputPhoneCodePollIntervalSeconds
     ? normalizePhoneCodePollIntervalSecondsValue(
       inputPhoneCodePollIntervalSeconds.value,
@@ -5255,6 +5263,7 @@ function collectSettingsPayload() {
     phoneNoSupplyRetryDelaySeconds: phoneNoSupplyRetryDelaySecondsValue,
     phoneCodeWaitSeconds: phoneCodeWaitSecondsValue,
     phoneCodeTimeoutWindows: phoneCodeTimeoutWindowsValue,
+    signupPhoneCodeTimeoutStrategy: signupPhoneCodeTimeoutStrategyValue,
     phoneCodePollIntervalSeconds: phoneCodePollIntervalSecondsValue,
     phoneCodePollMaxRounds: phoneCodePollMaxRoundsValue,
     heroSmsCountryId: heroSmsCountry.id,
@@ -6109,6 +6118,13 @@ function normalizePhoneCodePollMaxRoundsValue(value, fallback = DEFAULT_PHONE_CO
     );
   }
   return Math.max(PHONE_CODE_POLL_MAX_ROUNDS_MIN, Math.min(PHONE_CODE_POLL_MAX_ROUNDS_MAX, parsed));
+}
+
+function normalizeSignupPhoneCodeTimeoutStrategy(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESEND
+    ? SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESEND
+    : SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESTART;
 }
 
 function normalizeHeroSmsReuseEnabledValue(value, fallbackValue = undefined) {
@@ -9387,6 +9403,26 @@ function setSignupMethod(method) {
   return resolvedMethod;
 }
 
+function getSelectedSignupPhoneCodeTimeoutStrategy() {
+  const activeButton = signupPhoneCodeTimeoutStrategyButtons.find((button) => button.classList.contains('is-active'));
+  return normalizeSignupPhoneCodeTimeoutStrategy(
+    activeButton?.dataset.signupPhoneCodeTimeoutStrategy
+    || latestState?.signupPhoneCodeTimeoutStrategy
+    || DEFAULT_SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY
+  );
+}
+
+function setSignupPhoneCodeTimeoutStrategy(strategy) {
+  const normalizedStrategy = normalizeSignupPhoneCodeTimeoutStrategy(strategy);
+  signupPhoneCodeTimeoutStrategyButtons.forEach((button) => {
+    const active = normalizeSignupPhoneCodeTimeoutStrategy(button.dataset.signupPhoneCodeTimeoutStrategy) === normalizedStrategy;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  syncLatestState({ signupPhoneCodeTimeoutStrategy: normalizedStrategy });
+  return normalizedStrategy;
+}
+
 function canSelectPhoneSignupMethod() {
   const phoneEnabled = Boolean(inputPhoneVerificationEnabled?.checked);
   const plusModeEnabled = typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled
@@ -9624,6 +9660,7 @@ function updatePhoneVerificationSettingsUI() {
     typeof rowPhoneNoSupplyRetryDelaySeconds !== 'undefined' ? rowPhoneNoSupplyRetryDelaySeconds : null,
     typeof rowPhoneCodeWaitSeconds !== 'undefined' ? rowPhoneCodeWaitSeconds : null,
     typeof rowPhoneCodeTimeoutWindows !== 'undefined' ? rowPhoneCodeTimeoutWindows : null,
+    typeof rowSignupPhoneCodeTimeoutStrategy !== 'undefined' ? rowSignupPhoneCodeTimeoutStrategy : null,
     typeof rowPhoneCodePollIntervalSeconds !== 'undefined' ? rowPhoneCodePollIntervalSeconds : null,
     typeof rowPhoneCodePollMaxRounds !== 'undefined' ? rowPhoneCodePollMaxRounds : null,
     typeof rowFreePhoneReuseEnabled !== 'undefined' ? rowFreePhoneReuseEnabled : null,
@@ -11656,6 +11693,9 @@ function applySettingsState(state) {
     inputPhoneCodeTimeoutWindows.value = String(
       normalizePhoneCodeTimeoutWindowsValue(state?.phoneCodeTimeoutWindows, DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS)
     );
+  }
+  if (typeof setSignupPhoneCodeTimeoutStrategy === 'function') {
+    setSignupPhoneCodeTimeoutStrategy(state?.signupPhoneCodeTimeoutStrategy || DEFAULT_SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY);
   }
   if (typeof inputPhoneCodePollIntervalSeconds !== 'undefined' && inputPhoneCodePollIntervalSeconds) {
     inputPhoneCodePollIntervalSeconds.value = String(
@@ -16915,6 +16955,14 @@ signupMethodButtons.forEach((button) => {
   });
 });
 
+signupPhoneCodeTimeoutStrategyButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    setSignupPhoneCodeTimeoutStrategy(button.dataset.signupPhoneCodeTimeoutStrategy);
+    markSettingsDirty(true);
+    saveSettings({ silent: true }).catch(() => { });
+  });
+});
+
 inputPhoneSignupReloginAfterBindEmail?.addEventListener('change', () => {
   const stepDefinitionState = typeof resolveStepDefinitionCapabilityState === 'function'
     ? resolveStepDefinitionCapabilityState({
@@ -18183,6 +18231,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         inputPhoneCodeTimeoutWindows.value = String(
           normalizePhoneCodeTimeoutWindowsValue(message.payload.phoneCodeTimeoutWindows, DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS)
         );
+      }
+      if (message.payload.signupPhoneCodeTimeoutStrategy !== undefined) {
+        setSignupPhoneCodeTimeoutStrategy(message.payload.signupPhoneCodeTimeoutStrategy);
       }
       if (message.payload.phoneCodePollIntervalSeconds !== undefined && inputPhoneCodePollIntervalSeconds) {
         inputPhoneCodePollIntervalSeconds.value = String(

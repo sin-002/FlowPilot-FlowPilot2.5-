@@ -132,6 +132,7 @@ let currentState = {
   autoRunFallbackThreadIntervalMinutes: 0,
   autoStepDelaySeconds: null,
   signupMethod: 'phone',
+  signupPhoneCodeTimeoutStrategy: 'resend',
   resolvedSignupMethod: 'phone',
   accountIdentifierType: 'phone',
   accountIdentifier: '+6612345',
@@ -204,6 +205,7 @@ async function resetState() {
     autoRunFallbackThreadIntervalMinutes: prev.autoRunFallbackThreadIntervalMinutes,
     autoStepDelaySeconds: prev.autoStepDelaySeconds,
     signupMethod: prev.signupMethod,
+    signupPhoneCodeTimeoutStrategy: prev.signupPhoneCodeTimeoutStrategy,
     resolvedSignupMethod: null,
     accountIdentifierType: null,
     accountIdentifier: '',
@@ -418,6 +420,11 @@ return {
   assert.strictEqual(snapshot.currentState.gmailBaseEmail, 'demo@gmail.com', 'gmail base email should survive fresh-attempt reset');
   assert.strictEqual(snapshot.currentState.mail2925BaseEmail, 'demo@2925.com', '2925 base email should survive fresh-attempt reset');
   assert.strictEqual(snapshot.currentState.signupMethod, 'phone', 'signup method setting should survive fresh-attempt reset');
+  assert.strictEqual(
+    snapshot.currentState.signupPhoneCodeTimeoutStrategy,
+    'resend',
+    'signup phone timeout strategy should survive fresh-attempt reset'
+  );
   assert.strictEqual(snapshot.currentState.resolvedSignupMethod, null, 'resolved signup method should be cleared before the next run freezes it again');
   assert.strictEqual(snapshot.currentState.accountIdentifierType, null, 'account identifier type should be runtime-only');
   assert.strictEqual(snapshot.currentState.accountIdentifier, '', 'account identifier should be runtime-only');

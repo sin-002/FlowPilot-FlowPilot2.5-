@@ -11,6 +11,7 @@
       isTabAlive,
       resolveSignupMethod,
       sendToContentScript,
+      appendAccountRunRecord,
       setPasswordState,
       setState,
       OPENAI_AUTH_INJECT_FILES,
@@ -88,6 +89,16 @@
         createdAt: new Date().toISOString(),
       });
       await setState({ accounts });
+      if (identity.accountIdentifierType === 'phone' && typeof appendAccountRunRecord === 'function') {
+        await appendAccountRunRecord('node:fill-password:stopped', {
+          ...state,
+          email: identity.email,
+          phoneNumber: identity.phoneNumber,
+          accountIdentifierType: identity.accountIdentifierType,
+          accountIdentifier: identity.accountIdentifier,
+          password,
+        }, '节点 fill-password 已保存注册手机号与密码，流程尚未完成。');
+      }
 
       await chrome.tabs.update(signupTabId, { active: true });
       await ensureContentScriptReadyOnTab('openai-auth', signupTabId, {

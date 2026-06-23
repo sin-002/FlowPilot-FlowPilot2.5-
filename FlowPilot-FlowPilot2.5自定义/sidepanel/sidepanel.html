@@ -1695,6 +1695,13 @@
                     <span class="data-unit">轮</span>
                   </div>
                 </div>
+                <div id="row-signup-phone-code-timeout-strategy" class="hero-sms-settings-cell" style="display:none;">
+                  <span class="hero-sms-settings-caption">注册超时</span>
+                  <div id="signup-phone-code-timeout-strategy-group" class="choice-group" role="group" aria-label="注册手机号验证码超时处理">
+                    <button type="button" class="choice-btn is-active" data-signup-phone-code-timeout-strategy="restart" aria-pressed="true" title="注册短信超时后结束当前尝试，由多轮任务重头开始">重头开始</button>
+                    <button type="button" class="choice-btn" data-signup-phone-code-timeout-strategy="resend" aria-pressed="false" title="注册短信单轮超时后点击页面重新发送，再继续等待">重发短信</button>
+                  </div>
+                </div>
                 <div id="row-phone-code-poll-interval-seconds" class="hero-sms-settings-cell" style="display:none;">
                   <span class="hero-sms-settings-caption">轮询间隔</span>
                   <div class="setting-controls">

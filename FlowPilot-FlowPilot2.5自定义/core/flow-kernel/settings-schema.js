@@ -87,6 +87,9 @@
       }
       return 'oauth';
     };
+    const normalizeSignupPhoneCodeTimeoutStrategy = (value = '') => (
+      String(value || '').trim().toLowerCase() === 'resend' ? 'resend' : 'restart'
+    );
 
     function getCanonicalFlowIds() {
       const ids = Array.isArray(getRegisteredFlowIds())
@@ -388,6 +391,12 @@
             ?? defaultOpenAiSignup.phoneSignupReloginAfterBindEmailEnabled
             ?? false
           ),
+          signupPhoneCodeTimeoutStrategy: normalizeSignupPhoneCodeTimeoutStrategy(
+            input?.signupPhoneCodeTimeoutStrategy
+            ?? currentFlow.signup?.signupPhoneCodeTimeoutStrategy
+            ?? defaultOpenAiSignup.signupPhoneCodeTimeoutStrategy
+            ?? 'restart'
+          ),
         },
         plus: {
           plusModeEnabled: Boolean(
@@ -601,6 +610,7 @@
       next.signupMethod = openaiState.signup?.signupMethod || 'email';
       next.phoneVerificationEnabled = Boolean(openaiState.signup?.phoneVerificationEnabled);
       next.phoneSignupReloginAfterBindEmailEnabled = Boolean(openaiState.signup?.phoneSignupReloginAfterBindEmailEnabled);
+      next.signupPhoneCodeTimeoutStrategy = normalizeSignupPhoneCodeTimeoutStrategy(openaiState.signup?.signupPhoneCodeTimeoutStrategy);
       next.plusModeEnabled = Boolean(openaiState.plus?.plusModeEnabled);
       next.plusPaymentMethod = openaiState.plus?.plusPaymentMethod || 'paypal-hosted';
       next.plusAccountAccessStrategy = openaiState.plus?.plusAccountAccessStrategy || 'oauth';

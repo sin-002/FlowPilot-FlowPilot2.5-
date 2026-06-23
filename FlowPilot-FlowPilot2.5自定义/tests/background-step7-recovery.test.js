@@ -796,8 +796,8 @@ test('fetch-bind-email-code keeps target email matching and resend plan for 2925
   assert.equal(calls.resolveOptions.completionStep, 10);
   assert.equal(calls.resolveOptions.targetEmail, 'bind.user@example.com');
   assert.equal(calls.resolveOptions.maxResendRequests, 2);
-  assert.equal(calls.resolveOptions.initialPollMaxAttempts, 5);
-  assert.deepStrictEqual(calls.resolveOptions.pollAttemptPlan, [5, 3, 15]);
+  assert.equal(calls.resolveOptions.initialPollMaxAttempts, 8);
+  assert.deepStrictEqual(calls.resolveOptions.pollAttemptPlan, [8, 8, 8]);
   assert.deepStrictEqual(calls.setStates, [
     {
       step8VerificationTargetEmail: 'bind.user@example.com',
@@ -1787,7 +1787,7 @@ test('step 8 completes when polling fails but recovery probe shows oauth consent
   ]);
 });
 
-test('step 8 uses a fixed 10-minute lookback window and plans 2925 polling as 5/3/15', async () => {
+test('step 8 uses a fixed 10-minute lookback window and plans 2925 polling as 8/8/8', async () => {
   let capturedOptions = null;
   let ensureCalls = 0;
   let ensureOptions = null;
@@ -1880,8 +1880,8 @@ test('step 8 uses a fixed 10-minute lookback window and plans 2925 polling as 5/
   assert.equal(capturedOptions.filterAfterTimestamp, 300000);
   assert.equal(capturedOptions.resendIntervalMs, 0);
   assert.equal(capturedOptions.maxResendRequests, 2);
-  assert.equal(capturedOptions.initialPollMaxAttempts, 5);
-  assert.deepStrictEqual(capturedOptions.pollAttemptPlan, [5, 3, 15]);
+  assert.equal(capturedOptions.initialPollMaxAttempts, 8);
+  assert.deepStrictEqual(capturedOptions.pollAttemptPlan, [8, 8, 8]);
   assert.equal(capturedOptions.targetEmail, 'user@example.com');
   assert.equal(capturedOptions.beforeSubmit, undefined);
   assert.equal(typeof capturedOptions.getRemainingTimeMs, 'function');

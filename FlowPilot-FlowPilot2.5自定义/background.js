@@ -675,6 +675,9 @@ const DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS = 5;
 const PHONE_CODE_POLL_ROUNDS_MIN = 1;
 const PHONE_CODE_POLL_ROUNDS_MAX = 120;
 const DEFAULT_PHONE_CODE_POLL_ROUNDS = 4;
+const SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESTART = 'restart';
+const SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESEND = 'resend';
+const DEFAULT_SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY = SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESTART;
 const LEGACY_AUTO_STEP_DELAY_KEYS = ['autoStepRandomDelayMinSeconds', 'autoStepRandomDelayMaxSeconds'];
 const LEGACY_VERIFICATION_RESEND_COUNT_KEYS = ['signupVerificationResendCount', 'loginVerificationResendCount'];
 const DEFAULT_LOCAL_CPA_STEP9_MODE = 'submit';
@@ -1403,6 +1406,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   phoneCodeTimeoutWindows: DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS,
   phoneCodePollIntervalSeconds: DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS,
   phoneCodePollMaxRounds: DEFAULT_PHONE_CODE_POLL_ROUNDS,
+  signupPhoneCodeTimeoutStrategy: DEFAULT_SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY,
   mailProvider: '163',
   mail2925Mode: DEFAULT_MAIL_2925_MODE,
   mail2925UseAccountPool: false,
@@ -1920,6 +1924,13 @@ function normalizeSignupMethod(value = '') {
   return String(value || '').trim().toLowerCase() === 'phone'
     ? 'phone'
     : 'email';
+}
+
+function normalizeSignupPhoneCodeTimeoutStrategy(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESEND
+    ? SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESEND
+    : SIGNUP_PHONE_CODE_TIMEOUT_STRATEGY_RESTART;
 }
 
 function getFlowCapabilityRegistry() {
@@ -3161,7 +3172,7 @@ function normalizeStepExecutionRangeByFlow(value = {}) {
   return next;
 }
 
-function normalizePersistentSettingValue(key, value) {
+function normalizePersistentSettingValue(key, value, options = {}) {
   switch (key) {
     case 'targetId':
       return String(value || '').trim().toLowerCase();
@@ -3426,7 +3437,10 @@ function normalizePersistentSettingValue(key, value) {
     case 'phoneNoSupplyRetryDelaySeconds':
       return normalizePhoneNoSupplyRetryDelaySeconds(value, DEFAULT_PHONE_NO_SUPPLY_RETRY_DELAY_SECONDS);
     case 'phoneCodeWaitSeconds':
-      if (Math.floor(Number(value)) === LEGACY_DEFAULT_PHONE_CODE_WAIT_SECONDS) {
+      if (
+        options.migrateLegacyPhoneCodeWaitSeconds
+        && Math.floor(Number(value)) === LEGACY_DEFAULT_PHONE_CODE_WAIT_SECONDS
+      ) {
         return DEFAULT_PHONE_CODE_WAIT_SECONDS;
       }
       return normalizePhoneCodeWaitSeconds(value, DEFAULT_PHONE_CODE_WAIT_SECONDS);
@@ -3436,6 +3450,8 @@ function normalizePersistentSettingValue(key, value) {
       return normalizePhoneCodePollIntervalSeconds(value, DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS);
     case 'phoneCodePollMaxRounds':
       return normalizePhoneCodePollMaxRounds(value, DEFAULT_PHONE_CODE_POLL_ROUNDS);
+    case 'signupPhoneCodeTimeoutStrategy':
+      return normalizeSignupPhoneCodeTimeoutStrategy(value);
     case 'mailProvider':
       return normalizeMailProvider(value);
     case 'mail2925Mode':
@@ -3587,7 +3603,11 @@ function normalizePersistentSettingValue(key, value) {
 }
 
 function buildPersistentSettingsPayload(input = {}, options = {}) {
-  const { fillDefaults = false, requireKnownKeys = false } = options;
+  const {
+    fillDefaults = false,
+    requireKnownKeys = false,
+    migrateLegacyPhoneCodeWaitSeconds = false,
+  } = options;
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('\u914d\u7f6e\u5185\u5bb9\u683c\u5f0f\u65e0\u6548\u3002');
   }
@@ -3621,13 +3641,14 @@ function buildPersistentSettingsPayload(input = {}, options = {}) {
   const hasExplicitSettingsState = isPlainObjectForSettingsSchema(normalizedInput.settingsState);
 
   const payload = {};
+  const normalizeOptions = { migrateLegacyPhoneCodeWaitSeconds };
   let matchedKeyCount = 0;
   for (const key of persistedSettingKeys) {
     if (normalizedInput[key] !== undefined) {
-      payload[key] = normalizePersistentSettingValue(key, normalizedInput[key]);
+      payload[key] = normalizePersistentSettingValue(key, normalizedInput[key], normalizeOptions);
       matchedKeyCount += 1;
     } else if (fillDefaults) {
-      payload[key] = normalizePersistentSettingValue(key, persistedSettingDefaults[key]);
+      payload[key] = normalizePersistentSettingValue(key, persistedSettingDefaults[key], normalizeOptions);
     }
   }
 
@@ -3845,6 +3866,7 @@ function buildSettingsStatePatchFromFlatUpdates(updates = {}) {
   assignIfUpdated('signupMethod', ['flows', 'openai', 'signup', 'signupMethod']);
   assignIfUpdated('phoneVerificationEnabled', ['flows', 'openai', 'signup', 'phoneVerificationEnabled']);
   assignIfUpdated('phoneSignupReloginAfterBindEmailEnabled', ['flows', 'openai', 'signup', 'phoneSignupReloginAfterBindEmailEnabled']);
+  assignIfUpdated('signupPhoneCodeTimeoutStrategy', ['flows', 'openai', 'signup', 'signupPhoneCodeTimeoutStrategy']);
   assignIfUpdated('plusModeEnabled', ['flows', 'openai', 'plus', 'plusModeEnabled']);
   assignIfUpdated('plusPaymentMethod', ['flows', 'openai', 'plus', 'plusPaymentMethod']);
   assignIfUpdated('plusAccountAccessStrategy', ['flows', 'openai', 'plus', 'plusAccountAccessStrategy']);
@@ -3897,7 +3919,11 @@ async function getPersistedSettings() {
     ...LEGACY_AUTO_STEP_DELAY_KEYS,
     ...LEGACY_VERIFICATION_RESEND_COUNT_KEYS,
   ]);
-  return buildPersistentSettingsPayload(stored, { fillDefaults: true });
+  const storedSettingsSchemaVersion = Number(stored?.settingsSchemaVersion) || 0;
+  return buildPersistentSettingsPayload(stored, {
+    fillDefaults: true,
+    migrateLegacyPhoneCodeWaitSeconds: storedSettingsSchemaVersion <= 0,
+  });
 }
 
 function cloneAutoRunKeepStateValue(value) {
@@ -13754,6 +13780,7 @@ const step3Executor = self.MultiPageBackgroundStep3?.createStep3Executor({
   isTabAlive,
   resolveSignupMethod,
   sendToContentScript,
+  appendAccountRunRecord: (...args) => appendAndBroadcastAccountRunRecord(...args),
   setPasswordState,
   setState,
   OPENAI_AUTH_INJECT_FILES,

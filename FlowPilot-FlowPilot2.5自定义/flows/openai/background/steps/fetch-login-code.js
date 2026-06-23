@@ -2,7 +2,12 @@
   root.MultiPageBackgroundStep8 = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundStep8Module() {
   const MAIL_2925_FILTER_LOOKBACK_MS = 10 * 60 * 1000;
-  const MAIL_2925_RESEND_POLL_ATTEMPT_PLAN = [5, 3, 15];
+  const MAIL_2925_POLL_ATTEMPTS = 8;
+  const MAIL_2925_RESEND_POLL_ATTEMPT_PLAN = [
+    MAIL_2925_POLL_ATTEMPTS,
+    MAIL_2925_POLL_ATTEMPTS,
+    MAIL_2925_POLL_ATTEMPTS,
+  ];
   const MAIL_2925_RESEND_REQUESTS = 2;
 
   function createStep8Executor(deps = {}) {
@@ -664,7 +669,7 @@
         },
         targetEmail: fixedTargetEmail,
         maxResendRequests: mail.provider === '2925' ? MAIL_2925_RESEND_REQUESTS : undefined,
-        initialPollMaxAttempts: mail.provider === '2925' ? 5 : undefined,
+        initialPollMaxAttempts: mail.provider === '2925' ? MAIL_2925_POLL_ATTEMPTS : undefined,
         pollAttemptPlan: mail.provider === '2925' ? MAIL_2925_RESEND_POLL_ATTEMPT_PLAN : undefined,
         resendIntervalMs: mail.provider === LUCKMAIL_PROVIDER
           ? 15000

@@ -59,6 +59,7 @@ test('step 3 supports phone-only signup identity when password page is present',
     passwordStates: [],
     messages: [],
     stateUpdates: [],
+    accountRecords: [],
     logs: [],
   };
 
@@ -73,6 +74,9 @@ test('step 3 supports phone-only signup identity when password page is present',
     isTabAlive: async () => true,
     sendToContentScript: async (_source, message) => {
       events.messages.push(message);
+    },
+    appendAccountRunRecord: async (status, state, reason) => {
+      events.accountRecords.push({ status, state, reason });
     },
     setPasswordState: async (password) => {
       events.passwordStates.push(password);
@@ -94,6 +98,23 @@ test('step 3 supports phone-only signup identity when password page is present',
 
   assert.deepStrictEqual(events.passwordStates, ['PhoneSecret123!']);
   assert.equal(events.logs.some((message) => /注册手机号为 66959916439/.test(message)), true);
+  assert.deepStrictEqual(events.accountRecords.map((record) => ({
+    status: record.status,
+    accountIdentifierType: record.state.accountIdentifierType,
+    accountIdentifier: record.state.accountIdentifier,
+    phoneNumber: record.state.phoneNumber,
+    password: record.state.password,
+    reason: record.reason,
+  })), [
+    {
+      status: 'node:fill-password:stopped',
+      accountIdentifierType: 'phone',
+      accountIdentifier: '66959916439',
+      phoneNumber: '66959916439',
+      password: 'PhoneSecret123!',
+      reason: '节点 fill-password 已保存注册手机号与密码，流程尚未完成。',
+    },
+  ]);
   assert.equal(events.stateUpdates.length, 1);
   assert.deepStrictEqual(events.stateUpdates[0].accounts.map((account) => ({
     email: account.email,

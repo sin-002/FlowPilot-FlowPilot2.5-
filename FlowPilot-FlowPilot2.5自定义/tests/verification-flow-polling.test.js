@@ -980,7 +980,7 @@ test('verification flow keeps 2925 mailbox polling at 15 refresh attempts even w
   assert.ok(pollCall.options.timeoutMs >= 250000);
 });
 
-test('verification flow can run a 5/3/15 2925 resend polling plan', async () => {
+test('verification flow can run a fixed 8-attempt 2925 resend polling plan', async () => {
   const events = [];
   const pollMaxAttempts = [];
   let pollCalls = 0;
@@ -1039,8 +1039,8 @@ test('verification flow can run a 5/3/15 2925 resend polling plan', async () => 
     { provider: '2925', label: '2925 邮箱' },
     {
       maxResendRequests: 2,
-      initialPollMaxAttempts: 5,
-      pollAttemptPlan: [5, 3, 15],
+      initialPollMaxAttempts: 8,
+      pollAttemptPlan: [8, 8, 8],
       requestFreshCodeFirst: false,
       filterAfterTimestamp: 123,
       resendIntervalMs: 0,
@@ -1048,11 +1048,11 @@ test('verification flow can run a 5/3/15 2925 resend polling plan', async () => 
   );
 
   assert.deepStrictEqual(events.slice(0, 5), ['poll', 'resend', 'poll', 'resend', 'poll']);
-  assert.deepStrictEqual(pollMaxAttempts.slice(0, 3), [5, 3, 15]);
+  assert.deepStrictEqual(pollMaxAttempts.slice(0, 3), [8, 8, 8]);
   assert.equal(events.filter((event) => event === 'resend').length, 2);
 });
 
-test('verification flow uses full 2925 polling window after a rejected login code', async () => {
+test('verification flow keeps fixed 2925 polling window after a rejected login code', async () => {
   const pollMaxAttempts = [];
   const submittedCodes = [];
   let pollCalls = 0;
@@ -1115,15 +1115,15 @@ test('verification flow uses full 2925 polling window after a rejected login cod
     { provider: '2925', label: '2925 邮箱' },
     {
       maxResendRequests: 0,
-      initialPollMaxAttempts: 5,
-      pollAttemptPlan: [2, 3, 15],
+      initialPollMaxAttempts: 8,
+      pollAttemptPlan: [8, 8, 8],
       requestFreshCodeFirst: false,
       filterAfterTimestamp: 123,
       resendIntervalMs: 0,
     }
   );
 
-  assert.deepStrictEqual(pollMaxAttempts, [2, 15]);
+  assert.deepStrictEqual(pollMaxAttempts, [8, 8]);
   assert.deepStrictEqual(submittedCodes, ['111111', '222222']);
 });
 
